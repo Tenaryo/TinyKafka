@@ -76,8 +76,6 @@ class ServerProcess {
             execl(bin_path.c_str(), bin_path.c_str(), nullptr);
             _exit(127);
         }
-
-        wait_until_ready();
     }
 
     ~ServerProcess() {
@@ -90,19 +88,18 @@ class ServerProcess {
 
     ServerProcess(const ServerProcess&) = delete;
     ServerProcess& operator=(const ServerProcess&) = delete;
-  private:
-    void wait_until_ready() {
+
+    auto connect_with_retry() -> int {
         for (int i = 0; i < kMaxRetries; ++i) {
             int sock = connect_to_server();
             if (sock >= 0) {
-                close(sock);
-                return;
+                return sock;
             }
             usleep(kRetryDelayUs);
         }
         throw std::runtime_error("Server did not become ready in time");
     }
-
+  private:
     pid_t pid_{};
 };
 
@@ -111,7 +108,7 @@ class ServerProcess {
 TEST(IntegrationTest, ServerRespondsWithCorrectResponseHeader) {
     ServerProcess server;
 
-    int sock = connect_to_server();
+    int sock = server.connect_with_retry();
     ASSERT_GE(sock, 0) << "Failed to connect to server";
 
     if (send(sock, "placeholder", 11, 0) < 0) {

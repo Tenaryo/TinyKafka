@@ -1,59 +1,26 @@
-#include <arpa/inet.h>
 #include <cstdlib>
-#include <cstring>
 #include <iostream>
-#include <netdb.h>
-#include <string>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <unistd.h>
 
-int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
+#include "server.hpp"
+
+int main() {
     std::cout << std::unitbuf;
     std::cerr << std::unitbuf;
 
-    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd < 0) {
-        std::cerr << "Failed to create server socket: " << std::endl;
-        return 1;
-    }
-
-    int reuse = 1;
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
-        close(server_fd);
-        std::cerr << "setsockopt failed: " << std::endl;
-        return 1;
-    }
-
-    struct sockaddr_in server_addr {};
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(9092);
-
-    if (bind(server_fd, reinterpret_cast<struct sockaddr*>(&server_addr), sizeof(server_addr)) !=
-        0) {
-        close(server_fd);
-        std::cerr << "Failed to bind to port 9092" << std::endl;
-        return 1;
-    }
-
-    int connection_backlog = 5;
-    if (listen(server_fd, connection_backlog) != 0) {
-        close(server_fd);
-        std::cerr << "listen failed" << std::endl;
-        return 1;
+    auto server = Server::create(9092);
+    if (!server) {
+        std::cerr << "Failed to start server: " << server.error().message() << '\n';
+        return EXIT_FAILURE;
     }
 
     std::cout << "Waiting for a client to connect...\n";
 
-    struct sockaddr_in client_addr {};
-    socklen_t client_addr_len = sizeof(client_addr);
+    auto result = server->run();
+    if (!result) {
+        std::cerr << "Server error: " << result.error().message() << '\n';
+        return EXIT_FAILURE;
+    }
 
-    int client_fd =
-        accept(server_fd, reinterpret_cast<struct sockaddr*>(&client_addr), &client_addr_len);
     std::cout << "Client connected\n";
-    close(client_fd);
-
-    close(server_fd);
-    return 0;
+    return EXIT_SUCCESS;
 }
