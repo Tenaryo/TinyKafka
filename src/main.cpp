@@ -1,12 +1,12 @@
+#include <arpa/inet.h>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <netdb.h>
 #include <string>
-#include <unistd.h>
-#include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
     std::cout << std::unitbuf;
@@ -25,12 +25,13 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
         return 1;
     }
 
-    struct sockaddr_in server_addr{};
+    struct sockaddr_in server_addr {};
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = INADDR_ANY;
     server_addr.sin_port = htons(9092);
 
-    if (bind(server_fd, reinterpret_cast<struct sockaddr*>(&server_addr), sizeof(server_addr)) != 0) {
+    if (bind(server_fd, reinterpret_cast<struct sockaddr*>(&server_addr), sizeof(server_addr)) !=
+        0) {
         close(server_fd);
         std::cerr << "Failed to bind to port 9092" << std::endl;
         return 1;
@@ -45,10 +46,11 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
 
     std::cout << "Waiting for a client to connect...\n";
 
-    struct sockaddr_in client_addr{};
+    struct sockaddr_in client_addr {};
     socklen_t client_addr_len = sizeof(client_addr);
 
-    int client_fd = accept(server_fd, reinterpret_cast<struct sockaddr*>(&client_addr), &client_addr_len);
+    int client_fd =
+        accept(server_fd, reinterpret_cast<struct sockaddr*>(&client_addr), &client_addr_len);
     std::cout << "Client connected\n";
     close(client_fd);
 
