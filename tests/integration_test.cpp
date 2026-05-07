@@ -24,7 +24,7 @@ constexpr int kRetryDelayUs = 100'000;
 std::string find_server_binary() {
     std::filesystem::path test_dir = std::filesystem::canonical("/proc/self/exe").parent_path();
     std::filesystem::path build_dir = test_dir.parent_path();
-    auto server_path = build_dir / "TinyKafka";
+    auto server_path = build_dir / "kafka";
     if (!std::filesystem::exists(server_path)) {
         throw std::runtime_error("Server binary not found at: " + server_path.string());
     }

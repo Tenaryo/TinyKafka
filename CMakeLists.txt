@@ -15,8 +15,8 @@ target_compile_options(TinyKafka_core INTERFACE
     $<$<CONFIG:Release>:-O3>
 )
 
-add_executable(TinyKafka src/main.cpp)
-target_link_libraries(TinyKafka PRIVATE TinyKafka_core)
+add_executable(kafka src/main.cpp)
+target_link_libraries(kafka PRIVATE TinyKafka_core)
 
 option(ENABLE_SANITIZERS "Enable Address and Undefined Behavior Sanitizers" OFF)
 
