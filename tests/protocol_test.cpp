@@ -1,32 +1,35 @@
 #include <array>
 #include <cstdint>
-#include <span>
 #include <gtest/gtest.h>
+#include <span>
 
 #include "protocol.hpp"
 
-TEST(ProtocolTest, EncodeInt32BeZero) {
-    auto bytes = encode_int32_be(0);
-    EXPECT_EQ(bytes[0], 0x00);
-    EXPECT_EQ(bytes[1], 0x00);
-    EXPECT_EQ(bytes[2], 0x00);
-    EXPECT_EQ(bytes[3], 0x00);
+TEST(ProtocolTest, WriteInt32BeZero) {
+    std::array<uint8_t, 4> buf{};
+    write_int32_be(0, buf);
+    EXPECT_EQ(buf[0], 0x00);
+    EXPECT_EQ(buf[1], 0x00);
+    EXPECT_EQ(buf[2], 0x00);
+    EXPECT_EQ(buf[3], 0x00);
 }
 
-TEST(ProtocolTest, EncodeInt32BeSeven) {
-    auto bytes = encode_int32_be(7);
-    EXPECT_EQ(bytes[0], 0x00);
-    EXPECT_EQ(bytes[1], 0x00);
-    EXPECT_EQ(bytes[2], 0x00);
-    EXPECT_EQ(bytes[3], 0x07);
+TEST(ProtocolTest, WriteInt32BeSeven) {
+    std::array<uint8_t, 4> buf{};
+    write_int32_be(7, buf);
+    EXPECT_EQ(buf[0], 0x00);
+    EXPECT_EQ(buf[1], 0x00);
+    EXPECT_EQ(buf[2], 0x00);
+    EXPECT_EQ(buf[3], 0x07);
 }
 
-TEST(ProtocolTest, EncodeInt32BeLargeValue) {
-    auto bytes = encode_int32_be(0x01020304);
-    EXPECT_EQ(bytes[0], 0x01);
-    EXPECT_EQ(bytes[1], 0x02);
-    EXPECT_EQ(bytes[2], 0x03);
-    EXPECT_EQ(bytes[3], 0x04);
+TEST(ProtocolTest, WriteInt32BeLargeValue) {
+    std::array<uint8_t, 4> buf{};
+    write_int32_be(0x01020304, buf);
+    EXPECT_EQ(buf[0], 0x01);
+    EXPECT_EQ(buf[1], 0x02);
+    EXPECT_EQ(buf[2], 0x03);
+    EXPECT_EQ(buf[3], 0x04);
 }
 
 TEST(ProtocolTest, DecodeInt32BeZero) {
@@ -46,15 +49,14 @@ TEST(ProtocolTest, DecodeInt32BeLargeValue) {
 
 TEST(ProtocolTest, DecodeInt32BeRoundTrip) {
     constexpr int32_t value = 1870644833;
-    auto encoded = encode_int32_be(value);
-    EXPECT_EQ(decode_int32_be(encoded), value);
+    std::array<uint8_t, 4> buf{};
+    write_int32_be(value, buf);
+    EXPECT_EQ(decode_int32_be(buf), value);
 }
 
 TEST(ProtocolTest, DecodeInt32BeWithOffset) {
     const std::array<uint8_t, 12> buf{
-        0xAA, 0xBB, 0xCC, 0xDD, 0xCC, 0xDD, 0xEE, 0xFF,
-        0x6f, 0x7f, 0xc6, 0x61
-    };
+        0xAA, 0xBB, 0xCC, 0xDD, 0xCC, 0xDD, 0xEE, 0xFF, 0x6f, 0x7f, 0xc6, 0x61};
     EXPECT_EQ(decode_int32_be(std::span{buf}.subspan<8, 4>()), 1870644833);
 }
 

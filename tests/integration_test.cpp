@@ -68,8 +68,9 @@ int32_t decode_int32_be_response(std::span<const uint8_t, 4> data) {
            (static_cast<int32_t>(data[2]) << 8) | static_cast<int32_t>(data[3]);
 }
 
-auto build_request_header(int32_t correlation_id, int16_t api_key, int16_t api_version)
-    -> std::array<uint8_t, 35> {
+auto build_request_header(int32_t correlation_id,
+                          int16_t api_key,
+                          int16_t api_version) -> std::array<uint8_t, 35> {
     const char client_id[] = "kafka-cli";
     static_assert(sizeof(client_id) == 10);
 
@@ -163,9 +164,9 @@ TEST(IntegrationTest, ServerRespondsWithCorrectCorrelationId) {
     auto response = read_exactly(sock);
     close(sock);
 
-    int32_t echoed_correlation_id = decode_int32_be_response(
-        std::span<const uint8_t, 4>{response.data() + 4, 4});
+    int32_t echoed_correlation_id =
+        decode_int32_be_response(std::span<const uint8_t, 4>{response.data() + 4, 4});
     EXPECT_EQ(echoed_correlation_id, kTestCorrelationId)
-        << "Expected correlation_id 0x" << std::hex << kTestCorrelationId
-        << " but got 0x" << echoed_correlation_id;
+        << "Expected correlation_id 0x" << std::hex << kTestCorrelationId << " but got 0x"
+        << echoed_correlation_id;
 }

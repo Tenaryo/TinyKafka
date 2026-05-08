@@ -25,13 +25,14 @@ inline std::expected<void, std::error_code> send_all(int fd, std::span<const std
 }
 
 inline std::expected<void, std::error_code> handle_client(int fd) {
-    char buf[1024];
+    uint8_t buf[1024];
     auto n = ::read(fd, buf, sizeof(buf));
     if (n < 0) {
         return std::unexpected(std::error_code(errno, std::generic_category()));
     }
 
-    auto response = build_response_v0();
+    auto correlation_id = decode_int32_be(std::span<const uint8_t, 4>{buf + 8, 4});
+    auto response = build_response(correlation_id);
     return send_all(fd, response);
 }
 
