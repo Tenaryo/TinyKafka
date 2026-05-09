@@ -32,6 +32,23 @@ TEST(ProtocolTest, WriteInt32BeLargeValue) {
     EXPECT_EQ(buf[3], 0x04);
 }
 
+TEST(ProtocolTest, DecodeInt16BeZero) {
+    const std::array<uint8_t, 2> buf{0x00, 0x00};
+    EXPECT_EQ(decode_int16_be(buf), 0);
+}
+
+TEST(ProtocolTest, DecodeInt16BeValue) {
+    const std::array<uint8_t, 2> buf{0x00, 0x23};
+    EXPECT_EQ(decode_int16_be(buf), 35);
+}
+
+TEST(ProtocolTest, DecodeInt16BeRoundTrip) {
+    constexpr int16_t value = 26442;
+    std::array<uint8_t, 2> buf{};
+    write_int16_be(value, buf);
+    EXPECT_EQ(decode_int16_be(buf), value);
+}
+
 TEST(ProtocolTest, DecodeInt32BeZero) {
     const std::array<uint8_t, 4> buf{0x00, 0x00, 0x00, 0x00};
     EXPECT_EQ(decode_int32_be(buf), 0);
@@ -60,13 +77,39 @@ TEST(ProtocolTest, DecodeInt32BeWithOffset) {
     EXPECT_EQ(decode_int32_be(std::span{buf}.subspan<8, 4>()), 1870644833);
 }
 
+TEST(ProtocolTest, WriteInt16BeZero) {
+    std::array<uint8_t, 2> buf{};
+    write_int16_be(0, buf);
+    EXPECT_EQ(buf[0], 0x00);
+    EXPECT_EQ(buf[1], 0x00);
+}
+
+TEST(ProtocolTest, WriteInt16BeValue) {
+    std::array<uint8_t, 2> buf{};
+    write_int16_be(35, buf);
+    EXPECT_EQ(buf[0], 0x00);
+    EXPECT_EQ(buf[1], 0x23);
+}
+
+TEST(ProtocolTest, BuildResponseErrorCodeZero) {
+    auto response = build_response(0, 0);
+    EXPECT_EQ(response[8], 0x00);
+    EXPECT_EQ(response[9], 0x00);
+}
+
+TEST(ProtocolTest, BuildResponseErrorCodeUnsupported) {
+    auto response = build_response(0, 35);
+    EXPECT_EQ(response[8], 0x00);
+    EXPECT_EQ(response[9], 0x23);
+}
+
 TEST(ProtocolTest, BuildResponseCorrectSize) {
-    auto response = build_response(0);
-    EXPECT_EQ(response.size(), 8);
+    auto response = build_response(0, 0);
+    EXPECT_EQ(response.size(), 10);
 }
 
 TEST(ProtocolTest, BuildResponseMessageSizeIsZero) {
-    auto response = build_response(42);
+    auto response = build_response(42, 0);
     EXPECT_EQ(response[0], 0x00);
     EXPECT_EQ(response[1], 0x00);
     EXPECT_EQ(response[2], 0x00);
@@ -74,7 +117,7 @@ TEST(ProtocolTest, BuildResponseMessageSizeIsZero) {
 }
 
 TEST(ProtocolTest, BuildResponseCorrelationIdZero) {
-    auto response = build_response(0);
+    auto response = build_response(0, 0);
     EXPECT_EQ(response[4], 0x00);
     EXPECT_EQ(response[5], 0x00);
     EXPECT_EQ(response[6], 0x00);
@@ -82,7 +125,7 @@ TEST(ProtocolTest, BuildResponseCorrelationIdZero) {
 }
 
 TEST(ProtocolTest, BuildResponseCorrelationIdSeven) {
-    auto response = build_response(7);
+    auto response = build_response(7, 0);
     EXPECT_EQ(response[4], 0x00);
     EXPECT_EQ(response[5], 0x00);
     EXPECT_EQ(response[6], 0x00);
@@ -90,7 +133,7 @@ TEST(ProtocolTest, BuildResponseCorrelationIdSeven) {
 }
 
 TEST(ProtocolTest, BuildResponseCorrelationIdLarge) {
-    auto response = build_response(1870644833);
+    auto response = build_response(1870644833, 0);
     EXPECT_EQ(response[4], 0x6f);
     EXPECT_EQ(response[5], 0x7f);
     EXPECT_EQ(response[6], 0xc6);

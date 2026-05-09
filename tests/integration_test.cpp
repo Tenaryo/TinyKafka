@@ -50,11 +50,11 @@ int connect_to_server() {
     return sock;
 }
 
-std::array<uint8_t, 8> read_exactly(int fd) {
-    std::array<uint8_t, 8> buf{};
+std::array<uint8_t, 10> read_exactly(int fd) {
+    std::array<uint8_t, 10> buf{};
     size_t total = 0;
-    while (total < 8) {
-        auto n = read(fd, buf.data() + total, 8 - total);
+    while (total < 10) {
+        auto n = read(fd, buf.data() + total, 10 - total);
         if (n <= 0) {
             throw std::runtime_error("Failed to read response bytes");
         }
@@ -151,7 +151,7 @@ class ServerProcess {
 
 } // namespace
 
-TEST(IntegrationTest, ServerRespondsWithCorrectCorrelationId) {
+TEST(IntegrationTest, ServerHandlesApiVersionsValidVersion) {
     ServerProcess server;
 
     int sock = server.connect_with_retry();
@@ -169,4 +169,30 @@ TEST(IntegrationTest, ServerRespondsWithCorrectCorrelationId) {
     EXPECT_EQ(echoed_correlation_id, kTestCorrelationId)
         << "Expected correlation_id 0x" << std::hex << kTestCorrelationId << " but got 0x"
         << echoed_correlation_id;
+
+    int16_t error_code =
+        (static_cast<int16_t>(response[8]) << 8) | static_cast<int16_t>(response[9]);
+    EXPECT_EQ(error_code, 0) << "Expected error_code 0 for valid version";
+}
+
+TEST(IntegrationTest, ServerHandlesApiVersionsUnsupportedVersion) {
+    ServerProcess server;
+
+    int sock = server.connect_with_retry();
+    ASSERT_GE(sock, 0) << "Failed to connect to server";
+
+    auto request = build_request_header(kTestCorrelationId, 18, 26442);
+    auto sent = send(sock, request.data(), request.size(), 0);
+    ASSERT_GE(sent, 0) << "Failed to send request";
+
+    auto response = read_exactly(sock);
+    close(sock);
+
+    int32_t echoed_correlation_id =
+        decode_int32_be_response(std::span<const uint8_t, 4>{response.data() + 4, 4});
+    EXPECT_EQ(echoed_correlation_id, kTestCorrelationId);
+
+    int16_t error_code =
+        (static_cast<int16_t>(response[8]) << 8) | static_cast<int16_t>(response[9]);
+    EXPECT_EQ(error_code, 35) << "Expected error_code 35 (UNSUPPORTED_VERSION)";
 }
