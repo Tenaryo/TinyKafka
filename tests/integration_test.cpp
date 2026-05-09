@@ -50,8 +50,7 @@ int connect_to_server() {
     return sock;
 }
 
-template <size_t N>
-std::array<uint8_t, N> read_exactly(int fd) {
+template <size_t N> std::array<uint8_t, N> read_exactly(int fd) {
     std::array<uint8_t, N> buf{};
     size_t total = 0;
     while (total < N) {

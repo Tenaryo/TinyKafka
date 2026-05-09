@@ -12,9 +12,13 @@ TEST(SerializerTest, SerializesApiVersionsResponseValid) {
     };
     auto bytes = serialize(resp);
 
-    ASSERT_EQ(bytes.size(), 10);
-    EXPECT_EQ(bytes[8], 0x00);
-    EXPECT_EQ(bytes[9], 0x00);
+    ASSERT_EQ(bytes.size(), 16);
+    EXPECT_EQ(bytes[0], 0x00);
+    EXPECT_EQ(bytes[1], 0x00);
+    EXPECT_EQ(bytes[2], 0x00);
+    EXPECT_EQ(bytes[3], 0x0C);  // message_size = 12
+    EXPECT_EQ(bytes[10], 0x01); // compact array length = 0 (encoded as 1)
+    EXPECT_EQ(bytes[15], 0x00); // TAG_BUFFER
 }
 
 TEST(SerializerTest, SerializesApiVersionsResponseUnsupported) {
@@ -26,9 +30,8 @@ TEST(SerializerTest, SerializesApiVersionsResponseUnsupported) {
     };
     auto bytes = serialize(resp);
 
-    ASSERT_EQ(bytes.size(), 10);
-    EXPECT_EQ(bytes[8], 0x00);
-    EXPECT_EQ(bytes[9], 0x23);
+    ASSERT_EQ(bytes.size(), 16);
+    EXPECT_EQ(bytes[9], 0x23); // error_code = 35
 }
 
 TEST(SerializerTest, SerializesFullApiVersionsResponse) {
@@ -50,7 +53,7 @@ TEST(SerializerTest, SerializesFullApiVersionsResponse) {
     EXPECT_EQ(bytes[6], 0x0c);
     EXPECT_EQ(bytes[7], 0x0d); // correlation_id
     EXPECT_EQ(bytes[8], 0x00);
-    EXPECT_EQ(bytes[9], 0x00); // error_code = 0
+    EXPECT_EQ(bytes[9], 0x00);  // error_code = 0
     EXPECT_EQ(bytes[10], 0x02); // compact array length = 1
     EXPECT_EQ(bytes[11], 0x00);
     EXPECT_EQ(bytes[12], 0x12); // api_key = 18

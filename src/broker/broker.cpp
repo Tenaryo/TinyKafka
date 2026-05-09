@@ -1,5 +1,6 @@
 #include "broker/broker.hpp"
 
+#include "protocol/api_registry.hpp"
 #include "util/overloaded.hpp"
 
 auto Broker::handle(const Request& req) -> Response {
@@ -11,7 +12,7 @@ auto Broker::handle(const Request& req) -> Response {
                 return ApiVersionsResponse{
                     .correlation_id = r.header.correlation_id,
                     .error_code = error_code,
-                    .api_keys = {},
+                    .api_keys = {kSupportedApis.begin(), kSupportedApis.end()},
                     .throttle_time_ms = 0,
                 };
             },
