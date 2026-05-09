@@ -191,6 +191,49 @@ TEST(IntegrationTest, ServerHandlesApiVersionsValidVersion) {
     EXPECT_EQ(response[22], 0x00); // TAG_BUFFER
 }
 
+TEST(IntegrationTest, ServerHandlesMultipleRequestsSameConnection) {
+    ServerProcess server;
+
+    int sock = server.connect_with_retry();
+    ASSERT_GE(sock, 0) << "Failed to connect to server";
+
+    constexpr int32_t correlation_ids[] = {100, 200, 300};
+
+    for (int32_t cid : correlation_ids) {
+        auto request = build_request_header(cid, 18, 4);
+        auto sent = send(sock, request.data(), request.size(), 0);
+        ASSERT_GE(sent, 0) << "Failed to send request";
+
+        auto len_prefix = read_exactly<4>(sock);
+        int32_t message_size =
+            (static_cast<int32_t>(len_prefix[0]) << 24) |
+            (static_cast<int32_t>(len_prefix[1]) << 16) |
+            (static_cast<int32_t>(len_prefix[2]) << 8) |
+            static_cast<int32_t>(len_prefix[3]);
+        EXPECT_GT(message_size, 0) << "message_size must be positive";
+
+        std::vector<uint8_t> body(message_size);
+        size_t total = 0;
+        while (total < body.size()) {
+            auto n = read(sock, body.data() + total, body.size() - total);
+            ASSERT_GT(n, 0) << "Failed to read response body";
+            total += static_cast<size_t>(n);
+        }
+
+        int32_t echoed_cid = (static_cast<int32_t>(body[0]) << 24) |
+                             (static_cast<int32_t>(body[1]) << 16) |
+                             (static_cast<int32_t>(body[2]) << 8) |
+                             static_cast<int32_t>(body[3]);
+        EXPECT_EQ(echoed_cid, cid) << "Correlation ID mismatch";
+
+        int16_t error_code =
+            (static_cast<int16_t>(body[4]) << 8) | static_cast<int16_t>(body[5]);
+        EXPECT_EQ(error_code, 0) << "Error code should be 0";
+    }
+
+    close(sock);
+}
+
 TEST(IntegrationTest, ServerHandlesApiVersionsUnsupportedVersion) {
     ServerProcess server;
 
