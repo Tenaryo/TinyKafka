@@ -78,7 +78,7 @@ auto build_request_header(int32_t correlation_id,
     buf[0] = 0x00;
     buf[1] = 0x00;
     buf[2] = 0x00;
-    buf[3] = 0x23;
+    buf[3] = 0x1F;
 
     buf[4] = static_cast<uint8_t>((api_key >> 8) & 0xFF);
     buf[5] = static_cast<uint8_t>(api_key & 0xFF);
@@ -205,11 +205,10 @@ TEST(IntegrationTest, ServerHandlesMultipleRequestsSameConnection) {
         ASSERT_GE(sent, 0) << "Failed to send request";
 
         auto len_prefix = read_exactly<4>(sock);
-        int32_t message_size =
-            (static_cast<int32_t>(len_prefix[0]) << 24) |
-            (static_cast<int32_t>(len_prefix[1]) << 16) |
-            (static_cast<int32_t>(len_prefix[2]) << 8) |
-            static_cast<int32_t>(len_prefix[3]);
+        int32_t message_size = (static_cast<int32_t>(len_prefix[0]) << 24) |
+                               (static_cast<int32_t>(len_prefix[1]) << 16) |
+                               (static_cast<int32_t>(len_prefix[2]) << 8) |
+                               static_cast<int32_t>(len_prefix[3]);
         EXPECT_GT(message_size, 0) << "message_size must be positive";
 
         std::vector<uint8_t> body(message_size);
@@ -222,12 +221,10 @@ TEST(IntegrationTest, ServerHandlesMultipleRequestsSameConnection) {
 
         int32_t echoed_cid = (static_cast<int32_t>(body[0]) << 24) |
                              (static_cast<int32_t>(body[1]) << 16) |
-                             (static_cast<int32_t>(body[2]) << 8) |
-                             static_cast<int32_t>(body[3]);
+                             (static_cast<int32_t>(body[2]) << 8) | static_cast<int32_t>(body[3]);
         EXPECT_EQ(echoed_cid, cid) << "Correlation ID mismatch";
 
-        int16_t error_code =
-            (static_cast<int16_t>(body[4]) << 8) | static_cast<int16_t>(body[5]);
+        int16_t error_code = (static_cast<int16_t>(body[4]) << 8) | static_cast<int16_t>(body[5]);
         EXPECT_EQ(error_code, 0) << "Error code should be 0";
     }
 

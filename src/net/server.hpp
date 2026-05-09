@@ -33,5 +33,3 @@ class Server {
     explicit Server(int fd) : server_fd_(fd) {}
     int server_fd_;
 };
-
-auto send_all(int fd, std::span<const std::uint8_t> data) -> std::expected<void, std::error_code>;

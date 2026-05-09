@@ -1,11 +1,14 @@
 #include <cstdlib>
 #include <iostream>
 #include <unistd.h>
+#include <vector>
 
 #include "broker/broker.hpp"
 #include "net/server.hpp"
+#include "net/socket.hpp"
 #include "protocol/parser.hpp"
 #include "protocol/serializer.hpp"
+#include "util/endian.hpp"
 
 int main() {
     std::cout << std::unitbuf;
@@ -26,32 +29,49 @@ int main() {
     }
     int client_fd = *client;
 
-    std::array<std::uint8_t, 1024> buf{};
-    auto n = ::read(client_fd, buf.data(), buf.size());
-    if (n < 0) {
-        std::cerr << "Read failed: " << errno << '\n';
-        ::close(client_fd);
-        return EXIT_FAILURE;
-    }
-
-    auto req = parse_request(std::span{buf}.first(static_cast<std::size_t>(n)));
-    if (!req) {
-        ::close(client_fd);
-        return EXIT_FAILURE;
-    }
-
     Broker broker;
-    auto resp = broker.handle(*req);
-    auto bytes = serialize(resp);
+    std::vector<std::uint8_t> buf;
 
-    auto result = send_all(client_fd, bytes);
-    ::close(client_fd);
+    while (true) {
+        std::array<std::uint8_t, 4> len_buf{};
+        auto len_result = recv_all(client_fd, len_buf);
+        if (!len_result) {
+            std::cerr << "Read error: " << len_result.error().message() << '\n';
+            break;
+        }
+        if (*len_result == 0)
+            break;
 
-    if (!result) {
-        std::cerr << "Send failed: " << result.error().message() << '\n';
-        return EXIT_FAILURE;
+        auto message_length =
+            static_cast<std::size_t>(decode_int32_be(std::span<const std::uint8_t, 4>{len_buf}));
+        if (message_length > 1'048'576) {
+            std::cerr << "Message too large: " << message_length << '\n';
+            break;
+        }
+
+        buf.resize(message_length);
+        auto body_result = recv_all(client_fd, buf);
+        if (!body_result || *body_result != message_length) {
+            break;
+        }
+
+        auto req = parse_request(buf);
+        if (!req) {
+            std::cerr << "Parse failed\n";
+            break;
+        }
+
+        auto resp = broker.handle(*req);
+        auto bytes = serialize(resp);
+
+        auto send_result = send_all(client_fd, bytes);
+        if (!send_result) {
+            std::cerr << "Send failed: " << send_result.error().message() << '\n';
+            break;
+        }
     }
 
-    std::cout << "Client connected\n";
+    ::close(client_fd);
+    std::cout << "Client disconnected\n";
     return EXIT_SUCCESS;
 }
