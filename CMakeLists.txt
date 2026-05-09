@@ -6,10 +6,16 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-add_library(TinyKafka_core INTERFACE)
-target_include_directories(TinyKafka_core INTERFACE ${CMAKE_SOURCE_DIR}/src)
-target_compile_features(TinyKafka_core INTERFACE cxx_std_23)
-target_compile_options(TinyKafka_core INTERFACE
+add_library(TinyKafka_core STATIC
+    src/broker/broker.cpp
+    src/net/server.cpp
+    src/net/socket.cpp
+    src/protocol/parser.cpp
+    src/protocol/serializer.cpp
+)
+target_include_directories(TinyKafka_core PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(TinyKafka_core PUBLIC cxx_std_23)
+target_compile_options(TinyKafka_core PUBLIC
     -Wall -Wextra -Wpedantic -Werror -Wshadow -Wconversion
     $<$<CONFIG:Debug>:-g -O0>
     $<$<CONFIG:Release>:-O3>
