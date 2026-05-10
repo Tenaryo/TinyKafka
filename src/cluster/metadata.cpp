@@ -82,10 +82,10 @@ auto parse_cluster_metadata(std::span<const uint8_t> data) noexcept
             if (reader.offset() >= batch_end)
                 break;
 
-            auto rec_len = reader.read_varint();
-            if (!rec_len)
+            auto rec_len = reader.read_signed_varint();
+            if (!rec_len || *rec_len < 0)
                 continue;
-            size_t rec_end = reader.offset() + *rec_len;
+            size_t rec_end = reader.offset() + static_cast<size_t>(*rec_len);
 
             auto attr_result = reader.read_int8();
             if (!attr_result)
@@ -97,7 +97,7 @@ auto parse_cluster_metadata(std::span<const uint8_t> data) noexcept
             if (!skip_od)
                 continue;
 
-            auto key_len = reader.read_varint();
+            auto key_len = reader.read_signed_varint();
             if (!key_len)
                 continue;
             if (*key_len > 0) {
@@ -106,11 +106,11 @@ auto parse_cluster_metadata(std::span<const uint8_t> data) noexcept
                     continue;
             }
 
-            auto value_len = reader.read_varint();
+            auto value_len = reader.read_signed_varint();
             if (!value_len)
                 continue;
             if (*value_len < 4) {
-                auto skip_headers = reader.skip_varint();
+                auto header_count = reader.read_signed_varint();
                 continue;
             }
 
@@ -121,7 +121,7 @@ auto parse_cluster_metadata(std::span<const uint8_t> data) noexcept
 
             auto val_span = *value_bytes;
             if (val_span.size() < 4) {
-                auto skip_headers = reader.skip_varint();
+                auto header_count = reader.read_signed_varint();
                 continue;
             }
 
@@ -161,9 +161,25 @@ auto parse_cluster_metadata(std::span<const uint8_t> data) noexcept
                 partition_records.push_back(std::move(rec));
             }
 
-            auto skip_headers = reader.skip_varint();
-            if (!skip_headers)
-                continue;
+            auto header_count = reader.read_signed_varint();
+            for (int32_t h = 0; h < *header_count; ++h) {
+                auto hdr_key_len = reader.read_signed_varint();
+                if (!hdr_key_len)
+                    continue;
+                if (*hdr_key_len > 0) {
+                    auto skip_hdr_key = reader.skip(static_cast<size_t>(*hdr_key_len));
+                    if (!skip_hdr_key)
+                        continue;
+                }
+                auto hdr_val_len = reader.read_signed_varint();
+                if (!hdr_val_len)
+                    continue;
+                if (*hdr_val_len > 0) {
+                    auto skip_hdr_val = reader.skip(static_cast<size_t>(*hdr_val_len));
+                    if (!skip_hdr_val)
+                        continue;
+                }
+            }
 
             if (reader.offset() < rec_end) {
                 auto skip_rest = reader.skip(rec_end - reader.offset());

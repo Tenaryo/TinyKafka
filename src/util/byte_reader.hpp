@@ -84,6 +84,15 @@ class ByteReader {
         return {};
     }
 
+    auto read_signed_varint() noexcept -> std::expected<int32_t, std::error_code> {
+        auto result = ::read_signed_varint(data_.subspan(offset_));
+        if (!result) {
+            return std::unexpected(result.error());
+        }
+        offset_ += signed_varint_encoded_size(*result);
+        return result;
+    }
+
     auto skip_varint() noexcept -> std::expected<void, std::error_code> {
         auto result = read_unsigned_varint(data_.subspan(offset_));
         if (!result) {

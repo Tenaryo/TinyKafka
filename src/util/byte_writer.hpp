@@ -46,6 +46,12 @@ class ByteWriter {
         return written;
     }
 
+    auto write_signed_varint(int32_t value) noexcept -> size_t {
+        size_t written = ::write_signed_varint(value, data_.subspan(offset_));
+        offset_ += written;
+        return written;
+    }
+
     void write_compact_string(std::string_view str) noexcept {
         write_varint(static_cast<uint32_t>(str.size()) + 1);
         write_bytes(

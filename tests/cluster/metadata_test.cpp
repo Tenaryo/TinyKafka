@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include "cluster/metadata.hpp"
+#include "util/varint.hpp"
 
 namespace {
 
@@ -57,22 +58,23 @@ auto make_partition_record_value(int32_t partition_id,
 
 auto make_record(const std::vector<uint8_t>& value) -> std::vector<uint8_t> {
     std::vector<uint8_t> record;
-    auto push_varint = [&](uint32_t val) {
-        while (val > 0x7F) {
-            record.push_back(static_cast<uint8_t>((val & 0x7F) | 0x80));
-            val >>= 7;
+    auto push_signed_varint = [&](int32_t val) {
+        uint32_t encoded = zigzag_encode(val);
+        while (encoded > 0x7F) {
+            record.push_back(static_cast<uint8_t>((encoded & 0x7F) | 0x80));
+            encoded >>= 7;
         }
-        record.push_back(static_cast<uint8_t>(val & 0x7F));
+        record.push_back(static_cast<uint8_t>(encoded & 0x7F));
     };
-    uint32_t body_size = 1 + 1 + 1 + 1 + 1 + static_cast<uint32_t>(value.size()) + 1;
-    push_varint(body_size);
+    uint32_t body_size = 1 + 1 + 1 + 1 + 0 + 1 + static_cast<uint32_t>(value.size()) + 1;
+    push_signed_varint(static_cast<int32_t>(body_size));
     record.push_back(0x00);
-    push_varint(0);
-    push_varint(0);
-    push_varint(0);
-    push_varint(static_cast<uint32_t>(value.size()));
+    push_signed_varint(0);
+    push_signed_varint(0);
+    push_signed_varint(-1);
+    push_signed_varint(static_cast<int32_t>(value.size()));
     record.insert(record.end(), value.begin(), value.end());
-    push_varint(0);
+    push_signed_varint(0);
     return record;
 }
 
