@@ -19,12 +19,25 @@ struct ApiVersionsResponse {
     int32_t throttle_time_ms;
 };
 
+struct PartitionMetadata {
+    int16_t error_code = 0;
+    int32_t partition_index = 0;
+    int32_t leader_id = 0;
+    int32_t leader_epoch = 0;
+    std::vector<int32_t> replica_nodes;
+    std::vector<int32_t> isr_nodes;
+    std::vector<int32_t> eligible_leader_replicas;
+    std::vector<int32_t> last_known_elr;
+    std::vector<int32_t> offline_replicas;
+};
+
 struct TopicMetadata {
     int16_t error_code;
     std::string topic_name;
     std::array<uint8_t, 16> topic_id{};
     bool is_internal;
     int32_t authorized_operations;
+    std::vector<PartitionMetadata> partitions;
 };
 
 struct DescribeTopicPartitionsResponse {

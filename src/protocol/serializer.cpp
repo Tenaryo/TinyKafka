@@ -2,7 +2,7 @@
 
 #include <cstring>
 
-#include "util/endian.hpp"
+#include "util/byte_writer.hpp"
 #include "util/overloaded.hpp"
 #include "util/varint.hpp"
 
@@ -10,10 +10,22 @@ namespace {
 
 constexpr size_t kResponseHeaderV1Size = 5;
 
-void write_response_header_v1(int32_t correlation_id,
-                              std::span<uint8_t, kResponseHeaderV1Size> out) {
-    write_int32_be(correlation_id, std::span<uint8_t, 4>{out.data(), 4});
-    out[4] = 0x00;
+void write_compact_int32_array(ByteWriter& writer, const std::vector<int32_t>& arr) {
+    writer.write_varint(static_cast<uint32_t>(arr.size()) + 1);
+    for (int32_t v : arr) {
+        writer.write_int32(v);
+    }
+}
+
+size_t compact_int32_array_size(const std::vector<int32_t>& arr) {
+    return varint_encoded_size(static_cast<uint32_t>(arr.size()) + 1) + arr.size() * 4;
+}
+
+size_t partition_entry_size(const PartitionMetadata& p) {
+    return 14 + compact_int32_array_size(p.replica_nodes) + compact_int32_array_size(p.isr_nodes) +
+           compact_int32_array_size(p.eligible_leader_replicas) +
+           compact_int32_array_size(p.last_known_elr) +
+           compact_int32_array_size(p.offline_replicas) + 1;
 }
 
 } // namespace
@@ -26,28 +38,22 @@ auto serialize(const Response& resp) -> std::vector<std::uint8_t> {
                 const size_t varint_len = varint_encoded_size(count);
                 const size_t body_size = 4 + 2 + varint_len + r.api_keys.size() * 7 + 4 + 1;
                 std::vector<uint8_t> buf(4 + body_size);
+                ByteWriter writer(buf);
 
-                write_int32_be(static_cast<int32_t>(body_size),
-                               std::span<uint8_t, 4>{buf.data(), 4});
-                write_int32_be(r.correlation_id, std::span<uint8_t, 4>{buf.data() + 4, 4});
-                write_int16_be(r.error_code, std::span<uint8_t, 2>{buf.data() + 8, 2});
-
-                size_t offset = 10;
-                offset += write_unsigned_varint(
-                    count, std::span<uint8_t>{buf.data() + offset, buf.size() - offset});
+                writer.write_int32(static_cast<int32_t>(body_size));
+                writer.write_int32(r.correlation_id);
+                writer.write_int16(r.error_code);
+                writer.write_varint(count);
 
                 for (const auto& entry : r.api_keys) {
-                    write_int16_be(entry.api_key, std::span<uint8_t, 2>{buf.data() + offset, 2});
-                    write_int16_be(entry.min_version,
-                                   std::span<uint8_t, 2>{buf.data() + offset + 2, 2});
-                    write_int16_be(entry.max_version,
-                                   std::span<uint8_t, 2>{buf.data() + offset + 4, 2});
-                    buf[offset + 6] = 0x00;
-                    offset += 7;
+                    writer.write_int16(entry.api_key);
+                    writer.write_int16(entry.min_version);
+                    writer.write_int16(entry.max_version);
+                    writer.write_int8(0x00);
                 }
 
-                write_int32_be(r.throttle_time_ms, std::span<uint8_t, 4>{buf.data() + offset, 4});
-                buf[offset + 4] = 0x00;
+                writer.write_int32(r.throttle_time_ms);
+                writer.write_int8(0x00);
 
                 return buf;
             },
@@ -55,52 +61,61 @@ auto serialize(const Response& resp) -> std::vector<std::uint8_t> {
                 size_t body_size = kResponseHeaderV1Size + 4 + 1;
                 for (const auto& t : r.topics) {
                     uint32_t name_varint = static_cast<uint32_t>(t.topic_name.size()) + 1;
-                    body_size += 2 + varint_encoded_size(name_varint) + t.topic_name.size() + 16 +
-                                 1 + 1 + 4 + 1;
+                    body_size +=
+                        2 + varint_encoded_size(name_varint) + t.topic_name.size() + 16 + 1 + 4 + 1;
+                    if (t.partitions.empty()) {
+                        body_size += 1;
+                    } else {
+                        uint32_t part_count = static_cast<uint32_t>(t.partitions.size()) + 1;
+                        body_size += varint_encoded_size(part_count);
+                        for (const auto& p : t.partitions) {
+                            body_size += partition_entry_size(p);
+                        }
+                    }
                 }
                 body_size += 2;
 
                 std::vector<uint8_t> buf(4 + body_size);
-                write_int32_be(static_cast<int32_t>(body_size),
-                               std::span<uint8_t, 4>{buf.data(), 4});
-                write_response_header_v1(r.correlation_id,
-                                         std::span<uint8_t, kResponseHeaderV1Size>{
-                                             buf.data() + 4, kResponseHeaderV1Size});
-                size_t offset = 4 + kResponseHeaderV1Size;
+                ByteWriter writer(buf);
 
-                write_int32_be(r.throttle_time_ms, std::span<uint8_t, 4>{buf.data() + offset, 4});
-                offset += 4;
+                writer.write_int32(static_cast<int32_t>(body_size));
+                writer.write_int32(r.correlation_id);
+                writer.write_int8(0x00);
+                writer.write_int32(r.throttle_time_ms);
 
                 uint32_t topic_count = static_cast<uint32_t>(r.topics.size()) + 1;
-                offset += write_unsigned_varint(
-                    topic_count, std::span<uint8_t>{buf.data() + offset, buf.size() - offset});
+                writer.write_varint(topic_count);
 
                 for (const auto& t : r.topics) {
-                    write_int16_be(t.error_code, std::span<uint8_t, 2>{buf.data() + offset, 2});
-                    offset += 2;
+                    writer.write_int16(t.error_code);
+                    writer.write_compact_string(t.topic_name);
+                    writer.write_bytes(t.topic_id);
+                    writer.write_int8(t.is_internal ? 1 : 0);
 
-                    uint32_t name_varint = static_cast<uint32_t>(t.topic_name.size()) + 1;
-                    offset += write_unsigned_varint(
-                        name_varint, std::span<uint8_t>{buf.data() + offset, buf.size() - offset});
-                    std::memcpy(buf.data() + offset, t.topic_name.data(), t.topic_name.size());
-                    offset += t.topic_name.size();
+                    if (t.partitions.empty()) {
+                        writer.write_int8(0x01);
+                    } else {
+                        writer.write_varint(static_cast<uint32_t>(t.partitions.size()) + 1);
+                        for (const auto& p : t.partitions) {
+                            writer.write_int16(p.error_code);
+                            writer.write_int32(p.partition_index);
+                            writer.write_int32(p.leader_id);
+                            writer.write_int32(p.leader_epoch);
+                            write_compact_int32_array(writer, p.replica_nodes);
+                            write_compact_int32_array(writer, p.isr_nodes);
+                            write_compact_int32_array(writer, p.eligible_leader_replicas);
+                            write_compact_int32_array(writer, p.last_known_elr);
+                            write_compact_int32_array(writer, p.offline_replicas);
+                            writer.write_int8(0x00);
+                        }
+                    }
 
-                    std::memcpy(buf.data() + offset, t.topic_id.data(), 16);
-                    offset += 16;
-
-                    buf[offset++] = t.is_internal ? 1 : 0;
-
-                    buf[offset++] = 0x01;
-
-                    write_int32_be(t.authorized_operations,
-                                   std::span<uint8_t, 4>{buf.data() + offset, 4});
-                    offset += 4;
-
-                    buf[offset++] = 0x00;
+                    writer.write_int32(t.authorized_operations);
+                    writer.write_int8(0x00);
                 }
 
-                buf[offset++] = 0xFF;
-                buf[offset++] = 0x00;
+                writer.write_int8(0xFF);
+                writer.write_int8(0x00);
 
                 return buf;
             },

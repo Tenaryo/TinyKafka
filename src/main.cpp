@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "broker/broker.hpp"
+#include "cluster/metadata.hpp"
 #include "net/server.hpp"
 #include "net/socket.hpp"
 #include "protocol/parser.hpp"
@@ -14,6 +15,9 @@
 int main() {
     std::cout << std::unitbuf;
     std::cerr << std::unitbuf;
+
+    auto metadata = parse_cluster_metadata_file(
+        "/tmp/kraft-combined-logs/__cluster_metadata-0/00000000000000000000.log");
 
     auto server = Server::create(9092);
     if (!server) {
@@ -32,8 +36,8 @@ int main() {
 
         int client_fd = *client;
 
-        std::thread([client_fd] {
-            Broker broker;
+        std::thread([client_fd, &metadata] {
+            Broker broker(metadata);
             std::vector<std::uint8_t> buf;
 
             while (true) {
