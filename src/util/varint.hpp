@@ -2,7 +2,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <span>
+#include <string_view>
+#include <system_error>
 
 constexpr auto varint_encoded_size(uint32_t value) noexcept -> size_t {
     if (value == 0)
@@ -23,4 +26,41 @@ constexpr auto write_unsigned_varint(uint32_t value, std::span<uint8_t> buf) noe
     }
     buf[written++] = static_cast<uint8_t>(value & 0x7F);
     return written;
+}
+
+constexpr auto read_unsigned_varint(std::span<const uint8_t> buf) noexcept
+    -> std::expected<uint32_t, std::error_code> {
+    uint32_t value = 0;
+    uint32_t shift = 0;
+    size_t i = 0;
+    while (i < buf.size()) {
+        uint8_t byte = buf[i++];
+        value |= static_cast<uint32_t>(byte & 0x7F) << shift;
+        if ((byte & 0x80) == 0) {
+            return value;
+        }
+        shift += 7;
+    }
+    return std::unexpected(make_error_code(std::errc::message_size));
+}
+
+constexpr auto read_compact_string(std::span<const uint8_t> buf) noexcept
+    -> std::expected<std::string_view, std::error_code> {
+    if (buf.empty()) {
+        return std::unexpected(make_error_code(std::errc::message_size));
+    }
+    auto len_result = read_unsigned_varint(buf);
+    if (!len_result) {
+        return std::unexpected(len_result.error());
+    }
+    uint32_t len = *len_result;
+    if (len < 1) {
+        return std::unexpected(make_error_code(std::errc::message_size));
+    }
+    size_t str_len = len - 1;
+    size_t consumed = varint_encoded_size(len);
+    if (buf.size() < consumed + str_len) {
+        return std::unexpected(make_error_code(std::errc::message_size));
+    }
+    return std::string_view{reinterpret_cast<const char*>(buf.data() + consumed), str_len};
 }

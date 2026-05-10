@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <variant>
+#include <vector>
 
 struct RequestHeader {
     int16_t api_key;
@@ -13,4 +15,9 @@ struct ApiVersionsRequest {
     RequestHeader header;
 };
 
-using Request = std::variant<ApiVersionsRequest>;
+struct DescribeTopicPartitionsRequest {
+    RequestHeader header;
+    std::vector<std::string> topic_names;
+};
+
+using Request = std::variant<ApiVersionsRequest, DescribeTopicPartitionsRequest>;
