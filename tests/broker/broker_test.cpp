@@ -23,6 +23,25 @@ TEST(BrokerTest, HandlesUnsupportedVersion) {
     EXPECT_EQ(r.error_code, 35);
 }
 
+TEST(BrokerTest, HandlesDescribeTopicPartitionsUnknownTopic) {
+    RequestHeader header{75, 0, 42};
+    DescribeTopicPartitionsRequest req{header, {"foo"}};
+
+    auto resp = Broker{}.handle(req);
+    auto r = std::get_if<DescribeTopicPartitionsResponse>(&resp);
+    ASSERT_NE(r, nullptr);
+    EXPECT_EQ(r->correlation_id, 42);
+    EXPECT_EQ(r->throttle_time_ms, 0);
+    ASSERT_EQ(r->topics.size(), 1u);
+    EXPECT_EQ(r->topics[0].error_code, 3);
+    EXPECT_EQ(r->topics[0].topic_name, "foo");
+    for (const auto& b : r->topics[0].topic_id) {
+        EXPECT_EQ(b, 0x00);
+    }
+    EXPECT_EQ(r->topics[0].is_internal, false);
+    EXPECT_EQ(r->topics[0].authorized_operations, 0);
+}
+
 TEST(BrokerTest, ReturnsApiKeysForValidVersion) {
     RequestHeader header{18, 4, 42};
     ApiVersionsRequest req{header};

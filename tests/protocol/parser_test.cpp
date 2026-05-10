@@ -38,3 +38,41 @@ TEST(ParserTest, RejectsUnknownApiKey) {
     auto result = parse_request(buf);
     EXPECT_FALSE(result.has_value());
 }
+
+TEST(ParserTest, ParsesDescribeTopicPartitionsRequest) {
+    std::vector<std::uint8_t> buf;
+    buf.push_back(0x00);
+    buf.push_back(0x4B);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x07);
+    buf.push_back(0xFF);
+    buf.push_back(0xFF);
+    buf.push_back(0x00);
+    buf.push_back(0x02);
+    buf.push_back(0x04);
+    buf.push_back('f');
+    buf.push_back('o');
+    buf.push_back('o');
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x64);
+    buf.push_back(0xFF);
+    buf.push_back(0x00);
+
+    auto result = parse_request(buf);
+    ASSERT_TRUE(result.has_value());
+
+    auto req = std::get_if<DescribeTopicPartitionsRequest>(&*result);
+    ASSERT_NE(req, nullptr);
+    EXPECT_EQ(req->header.api_key, 75);
+    EXPECT_EQ(req->header.api_version, 0);
+    EXPECT_EQ(req->header.correlation_id, 7);
+    EXPECT_EQ(req->topic_names.size(), 1u);
+    EXPECT_EQ(req->topic_names[0], "foo");
+}

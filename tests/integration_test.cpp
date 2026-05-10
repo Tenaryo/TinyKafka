@@ -162,41 +162,41 @@ TEST(IntegrationTest, ServerHandlesApiVersionsValidVersion) {
     auto sent = send(sock, request.data(), request.size(), 0);
     ASSERT_GE(sent, 0) << "Failed to send request";
 
-    auto response = read_exactly<30>(sock);
+    auto response = read_exactly<31>(sock);
     close(sock);
 
     EXPECT_EQ(response[0], 0x00);
     EXPECT_EQ(response[1], 0x00);
     EXPECT_EQ(response[2], 0x00);
-    EXPECT_EQ(response[3], 0x1a); // message_size = 26
+    EXPECT_EQ(response[3], 0x1b); // message_size = 27
 
     int32_t echoed_correlation_id =
         decode_int32_be_response(std::span<const uint8_t, 4>{response.data() + 4, 4});
     EXPECT_EQ(echoed_correlation_id, kTestCorrelationId);
 
     int16_t error_code =
-        (static_cast<int16_t>(response[8]) << 8) | static_cast<int16_t>(response[9]);
+        (static_cast<int16_t>(response[9]) << 8) | static_cast<int16_t>(response[10]);
     EXPECT_EQ(error_code, 0);
-    EXPECT_EQ(response[10], 0x03);   // compact array length = 2 (varint: 2+1)
-    EXPECT_EQ(response[11], 0x00);
-    EXPECT_EQ(response[12], 0x12);   // api_key = 18
-    EXPECT_EQ(response[13], 0x00);
-    EXPECT_EQ(response[14], 0x00);   // min_version = 0
-    EXPECT_EQ(response[15], 0x00);
-    EXPECT_EQ(response[16], 0x04);   // max_version = 4
-    EXPECT_EQ(response[17], 0x00);   // TAG_BUFFER (entry 1)
-    EXPECT_EQ(response[18], 0x00);
-    EXPECT_EQ(response[19], 0x4b);   // api_key = 75
-    EXPECT_EQ(response[20], 0x00);
-    EXPECT_EQ(response[21], 0x00);   // min_version = 0
-    EXPECT_EQ(response[22], 0x00);
-    EXPECT_EQ(response[23], 0x00);   // max_version = 0
-    EXPECT_EQ(response[24], 0x00);   // TAG_BUFFER (entry 2)
-    EXPECT_EQ(response[25], 0x00);
+    EXPECT_EQ(response[11], 0x03); // compact array length = 2 (varint: 2+1)
+    EXPECT_EQ(response[12], 0x00);
+    EXPECT_EQ(response[13], 0x12); // api_key = 18
+    EXPECT_EQ(response[14], 0x00);
+    EXPECT_EQ(response[15], 0x00); // min_version = 0
+    EXPECT_EQ(response[16], 0x00);
+    EXPECT_EQ(response[17], 0x04); // max_version = 4
+    EXPECT_EQ(response[18], 0x00); // TAG_BUFFER (entry 1)
+    EXPECT_EQ(response[19], 0x00);
+    EXPECT_EQ(response[20], 0x4b); // api_key = 75
+    EXPECT_EQ(response[21], 0x00);
+    EXPECT_EQ(response[22], 0x00); // min_version = 0
+    EXPECT_EQ(response[23], 0x00);
+    EXPECT_EQ(response[24], 0x00); // max_version = 0
+    EXPECT_EQ(response[25], 0x00); // TAG_BUFFER (entry 2)
     EXPECT_EQ(response[26], 0x00);
     EXPECT_EQ(response[27], 0x00);
-    EXPECT_EQ(response[28], 0x00);   // throttle_time_ms = 0
-    EXPECT_EQ(response[29], 0x00);   // TAG_BUFFER
+    EXPECT_EQ(response[28], 0x00);
+    EXPECT_EQ(response[29], 0x00); // throttle_time_ms = 0
+    EXPECT_EQ(response[30], 0x00); // TAG_BUFFER
 }
 
 TEST(IntegrationTest, ServerHandlesMultipleRequestsSameConnection) {
@@ -232,14 +232,15 @@ TEST(IntegrationTest, ServerHandlesMultipleRequestsSameConnection) {
                              (static_cast<int32_t>(body[2]) << 8) | static_cast<int32_t>(body[3]);
         EXPECT_EQ(echoed_cid, cid) << "Correlation ID mismatch";
 
-        int16_t error_code = (static_cast<int16_t>(body[4]) << 8) | static_cast<int16_t>(body[5]);
+        int16_t error_code = (static_cast<int16_t>(body[5]) << 8) | static_cast<int16_t>(body[6]);
         EXPECT_EQ(error_code, 0) << "Error code should be 0";
     }
 
     close(sock);
 }
 
-void verify_api_versions_response(int32_t expected_correlation_id, const std::vector<uint8_t>& body) {
+void verify_api_versions_response(int32_t expected_correlation_id,
+                                  const std::vector<uint8_t>& body) {
     ASSERT_GE(body.size(), 6u) << "Response body too short";
 
     int32_t echoed_cid = (static_cast<int32_t>(body[0]) << 24) |
@@ -247,10 +248,10 @@ void verify_api_versions_response(int32_t expected_correlation_id, const std::ve
                          (static_cast<int32_t>(body[2]) << 8) | static_cast<int32_t>(body[3]);
     EXPECT_EQ(echoed_cid, expected_correlation_id) << "Correlation ID mismatch";
 
-    int16_t error_code = (static_cast<int16_t>(body[4]) << 8) | static_cast<int16_t>(body[5]);
+    int16_t error_code = (static_cast<int16_t>(body[5]) << 8) | static_cast<int16_t>(body[6]);
     EXPECT_EQ(error_code, 0) << "Error code should be 0";
 
-    size_t offset = 6;
+    size_t offset = 7;
     ASSERT_LT(offset + 1, body.size()) << "Body too short for compact array length";
     uint32_t array_len = static_cast<uint32_t>(body[offset]);
     offset += 1;
@@ -262,9 +263,12 @@ void verify_api_versions_response(int32_t expected_correlation_id, const std::ve
     bool found_api75 = false;
     for (uint32_t i = 0; i < entry_count; ++i) {
         ASSERT_LE(offset + 7, body.size()) << "Truncated api key entry";
-        int16_t api_key = (static_cast<int16_t>(body[offset]) << 8) | static_cast<int16_t>(body[offset + 1]);
-        int16_t min_ver = (static_cast<int16_t>(body[offset + 2]) << 8) | static_cast<int16_t>(body[offset + 3]);
-        int16_t max_ver = (static_cast<int16_t>(body[offset + 4]) << 8) | static_cast<int16_t>(body[offset + 5]);
+        int16_t api_key =
+            (static_cast<int16_t>(body[offset]) << 8) | static_cast<int16_t>(body[offset + 1]);
+        int16_t min_ver =
+            (static_cast<int16_t>(body[offset + 2]) << 8) | static_cast<int16_t>(body[offset + 3]);
+        int16_t max_ver =
+            (static_cast<int16_t>(body[offset + 4]) << 8) | static_cast<int16_t>(body[offset + 5]);
         if (api_key == 18) {
             found_api18 = true;
             EXPECT_EQ(min_ver, 0) << "MinVersion for ApiKey 18 must be 0";
@@ -296,9 +300,9 @@ TEST(IntegrationTest, ServerHandlesTwoConcurrentClients) {
 
             auto len_prefix = read_exactly<4>(sock);
             int32_t message_size = (static_cast<int32_t>(len_prefix[0]) << 24) |
-                                    (static_cast<int32_t>(len_prefix[1]) << 16) |
-                                    (static_cast<int32_t>(len_prefix[2]) << 8) |
-                                    static_cast<int32_t>(len_prefix[3]);
+                                   (static_cast<int32_t>(len_prefix[1]) << 16) |
+                                   (static_cast<int32_t>(len_prefix[2]) << 8) |
+                                   static_cast<int32_t>(len_prefix[3]);
             EXPECT_GT(message_size, 0) << "message_size must be positive";
 
             std::vector<uint8_t> body(message_size);
@@ -332,7 +336,7 @@ TEST(IntegrationTest, ServerHandlesApiVersionsUnsupportedVersion) {
     auto sent = send(sock, request.data(), request.size(), 0);
     ASSERT_GE(sent, 0) << "Failed to send request";
 
-    auto response = read_exactly<30>(sock);
+    auto response = read_exactly<31>(sock);
     close(sock);
 
     int32_t echoed_correlation_id =
@@ -340,6 +344,76 @@ TEST(IntegrationTest, ServerHandlesApiVersionsUnsupportedVersion) {
     EXPECT_EQ(echoed_correlation_id, kTestCorrelationId);
 
     int16_t error_code =
-        (static_cast<int16_t>(response[8]) << 8) | static_cast<int16_t>(response[9]);
+        (static_cast<int16_t>(response[9]) << 8) | static_cast<int16_t>(response[10]);
     EXPECT_EQ(error_code, 35);
+}
+
+TEST(IntegrationTest, ServerHandlesDescribeTopicPartitionsUnknownTopic) {
+    ServerProcess server;
+
+    int sock = server.connect_with_retry();
+    ASSERT_GE(sock, 0) << "Failed to connect to server";
+
+    std::vector<uint8_t> request;
+    auto push_be16 = [&](int16_t v) {
+        request.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        request.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto push_be32 = [&](int32_t v) {
+        request.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+        request.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        request.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        request.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    request.reserve(27);
+    push_be32(23);
+    push_be16(75);
+    push_be16(0);
+    push_be32(kTestCorrelationId);
+    request.push_back(0xFF);
+    request.push_back(0xFF);
+    request.push_back(0x00);
+    request.push_back(0x02);
+    request.push_back(0x04);
+    request.push_back('f');
+    request.push_back('o');
+    request.push_back('o');
+    request.push_back(0x00);
+    push_be32(0);
+    request.push_back(0xFF);
+    request.push_back(0x00);
+
+    auto sent = send(sock, request.data(), request.size(), 0);
+    ASSERT_GE(sent, 0) << "Failed to send request";
+
+    auto response = read_exactly<45>(sock);
+    close(sock);
+
+    EXPECT_EQ(response[0], 0x00);
+    EXPECT_EQ(response[1], 0x00);
+    EXPECT_EQ(response[2], 0x00);
+    EXPECT_EQ(response[3], 0x29); // message_size = 41
+
+    int32_t echoed_correlation_id =
+        decode_int32_be_response(std::span<const uint8_t, 4>{response.data() + 4, 4});
+    EXPECT_EQ(echoed_correlation_id, kTestCorrelationId);
+
+    EXPECT_EQ(response[8], 0x00); // TAG_BUFFER (response header v1)
+
+    EXPECT_EQ(response[9], 0x00);
+    EXPECT_EQ(response[10], 0x00);
+    EXPECT_EQ(response[11], 0x00);
+    EXPECT_EQ(response[12], 0x00); // throttle_time_ms = 0
+    EXPECT_EQ(response[13], 0x02); // topics array length = 1
+    EXPECT_EQ(response[14], 0x00);
+    EXPECT_EQ(response[15], 0x03); // error_code = 3
+    EXPECT_EQ(response[16], 0x04); // topic_name length = 3
+    EXPECT_EQ(response[17], 'f');
+    EXPECT_EQ(response[18], 'o');
+    EXPECT_EQ(response[19], 'o');
+    EXPECT_EQ(response[36], 0x00); // is_internal = false
+    EXPECT_EQ(response[37], 0x01); // partitions array empty
+    EXPECT_EQ(response[42], 0x00); // topic TAG_BUFFER
+    EXPECT_EQ(response[43], 0xFF); // next_cursor = -1 (null)
+    EXPECT_EQ(response[44], 0x00); // body TAG_BUFFER
 }
