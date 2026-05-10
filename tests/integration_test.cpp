@@ -325,7 +325,7 @@ TEST(IntegrationTest, ServerHandlesApiVersionsUnsupportedVersion) {
     auto sent = send(sock, request.data(), request.size(), 0);
     ASSERT_GE(sent, 0) << "Failed to send request";
 
-    auto response = read_exactly<23>(sock);
+    auto response = read_exactly<30>(sock);
     close(sock);
 
     int32_t echoed_correlation_id =
