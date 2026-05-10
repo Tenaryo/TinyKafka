@@ -8,8 +8,8 @@
 
 namespace {
 
-constexpr int16_t kTopicRecordKey = 2;
-constexpr int16_t kPartitionRecordKey = 3;
+constexpr uint32_t kTopicRecordKey = 2;
+constexpr uint32_t kPartitionRecordKey = 3;
 constexpr size_t kRecordBatchHeaderSize = 61;
 constexpr size_t kUuidSize = 16;
 
@@ -109,7 +109,7 @@ auto parse_cluster_metadata(std::span<const uint8_t> data) noexcept
             auto value_len = reader.read_signed_varint();
             if (!value_len)
                 continue;
-            if (*value_len < 4) {
+            if (*value_len < 3) {
                 auto header_count = reader.read_signed_varint();
                 continue;
             }
@@ -120,16 +120,19 @@ auto parse_cluster_metadata(std::span<const uint8_t> data) noexcept
                 continue;
 
             auto val_span = *value_bytes;
-            if (val_span.size() < 4) {
+            if (val_span.size() < 3) {
                 auto header_count = reader.read_signed_varint();
                 continue;
             }
 
             ByteReader val_reader(val_span);
-            auto val_api_key = val_reader.read_int16();
+            auto val_frame_ver = val_reader.read_varint();
+            if (!val_frame_ver)
+                continue;
+            auto val_api_key = val_reader.read_varint();
             if (!val_api_key)
                 continue;
-            auto val_version = val_reader.read_int16();
+            auto val_version = val_reader.read_varint();
             if (!val_version)
                 continue;
 

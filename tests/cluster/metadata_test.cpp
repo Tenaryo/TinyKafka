@@ -12,11 +12,17 @@ namespace {
 auto make_topic_record_value(std::string_view name,
                              const std::array<uint8_t, 16>& uuid) -> std::vector<uint8_t> {
     std::vector<uint8_t> v;
-    v.push_back(0x00);
-    v.push_back(0x02);
-    v.push_back(0x00);
-    v.push_back(0x00);
-    v.push_back(static_cast<uint8_t>(name.size() + 1));
+    auto push_varint = [&](uint32_t val) {
+        while (val > 0x7F) {
+            v.push_back(static_cast<uint8_t>((val & 0x7F) | 0x80));
+            val >>= 7;
+        }
+        v.push_back(static_cast<uint8_t>(val & 0x7F));
+    };
+    push_varint(1);
+    push_varint(2);
+    push_varint(0);
+    push_varint(static_cast<uint32_t>(name.size()) + 1);
     for (char c : name) {
         v.push_back(static_cast<uint8_t>(c));
     }
@@ -30,28 +36,34 @@ auto make_topic_record_value(std::string_view name,
 auto make_partition_record_value(int32_t partition_id,
                                  const std::array<uint8_t, 16>& uuid) -> std::vector<uint8_t> {
     std::vector<uint8_t> v;
+    auto push_varint = [&](uint32_t val) {
+        while (val > 0x7F) {
+            v.push_back(static_cast<uint8_t>((val & 0x7F) | 0x80));
+            val >>= 7;
+        }
+        v.push_back(static_cast<uint8_t>(val & 0x7F));
+    };
     auto push_be32 = [&](int32_t val) {
         v.push_back(static_cast<uint8_t>((val >> 24) & 0xFF));
         v.push_back(static_cast<uint8_t>((val >> 16) & 0xFF));
         v.push_back(static_cast<uint8_t>((val >> 8) & 0xFF));
         v.push_back(static_cast<uint8_t>(val & 0xFF));
     };
-    v.push_back(0x00);
-    v.push_back(0x03);
-    v.push_back(0x00);
-    v.push_back(0x00);
+    push_varint(1);
+    push_varint(3);
+    push_varint(0);
     push_be32(partition_id);
     for (auto b : uuid) {
         v.push_back(b);
     }
-    v.push_back(0x01);
-    v.push_back(0x01);
-    v.push_back(0x01);
-    v.push_back(0x01);
+    push_varint(1);
+    push_varint(1);
+    push_varint(1);
+    push_varint(1);
     push_be32(0);
     push_be32(0);
     push_be32(0);
-    v.push_back(0x01);
+    push_varint(1);
     v.push_back(0x00);
     return v;
 }
@@ -168,10 +180,9 @@ TEST(MetadataTest, ParseTopicAndPartitionRecords) {
 
 TEST(MetadataTest, UnknownRecordTypeSkipped) {
     auto unknown_val = std::vector<uint8_t>{
-        0x00,
+        0x01,
         0x63,
-        0x00,
-        0x00, // api_key = 99 (unknown), version = 0
+        0x00, // frame_ver=1, type=99, ver=0 (unsigned varints)
         0x01,
         0x00 // dummy data + tagged
     };
