@@ -1,5 +1,7 @@
 #include "broker/broker.hpp"
 
+#include <algorithm>
+
 #include "protocol/api_registry.hpp"
 #include "protocol/response.hpp"
 #include "util/overloaded.hpp"
@@ -61,6 +63,7 @@ auto Broker::handle(const Request& req) -> Response {
                               for (const auto& name : r.topic_names) {
                                   topics.push_back(build_topic_metadata(name));
                               }
+                              std::ranges::sort(topics, {}, &TopicMetadata::topic_name);
                               return DescribeTopicPartitionsResponse{
                                   .correlation_id = r.header.correlation_id,
                                   .throttle_time_ms = 0,

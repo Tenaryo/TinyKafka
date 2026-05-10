@@ -50,6 +50,29 @@ auto parse_request(std::span<const std::uint8_t> buf) -> std::expected<Request, 
                 return std::unexpected(skip_topic_tag.error());
         }
 
+        auto partition_limit = reader.read_int32();
+        if (!partition_limit)
+            return std::unexpected(partition_limit.error());
+
+        auto cursor_flag = reader.read_int8();
+        if (!cursor_flag)
+            return std::unexpected(cursor_flag.error());
+        if (*cursor_flag != 0xFF) {
+            auto cursor_name = reader.read_compact_string();
+            if (!cursor_name)
+                return std::unexpected(cursor_name.error());
+            auto cursor_partition = reader.read_int32();
+            if (!cursor_partition)
+                return std::unexpected(cursor_partition.error());
+            auto cursor_tag = reader.skip(1);
+            if (!cursor_tag)
+                return std::unexpected(cursor_tag.error());
+        }
+
+        auto final_tag = reader.skip(1);
+        if (!final_tag)
+            return std::unexpected(final_tag.error());
+
         return DescribeTopicPartitionsRequest{
             RequestHeader{*api_key, *api_version, *correlation_id}, std::move(topic_names)};
     }
