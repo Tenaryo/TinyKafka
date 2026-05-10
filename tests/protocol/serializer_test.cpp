@@ -329,3 +329,22 @@ TEST(SerializerTest, SerializesDescribeTopicPartitionsMultiTopic) {
     EXPECT_EQ(bytes[160], 0xFF); // next_cursor = -1 (null)
     EXPECT_EQ(bytes[161], 0x00); // body TAG_BUFFER
 }
+
+TEST(SerializerTest, SerializesFetchApiEntry) {
+    ApiVersionsResponse resp{
+        .correlation_id = 1,
+        .error_code = 0,
+        .api_keys = {{.api_key = 1, .min_version = 0, .max_version = 16}},
+        .throttle_time_ms = 0,
+    };
+    auto bytes = serialize(resp);
+
+    EXPECT_EQ(bytes[10], 0x02); // compact array length = 1 (entry count + 1)
+    EXPECT_EQ(bytes[11], 0x00);
+    EXPECT_EQ(bytes[12], 0x01); // api_key = 1
+    EXPECT_EQ(bytes[13], 0x00);
+    EXPECT_EQ(bytes[14], 0x00); // min_version = 0
+    EXPECT_EQ(bytes[15], 0x00);
+    EXPECT_EQ(bytes[16], 0x10); // max_version = 16
+    EXPECT_EQ(bytes[17], 0x00); // TAG_BUFFER (entry)
+}

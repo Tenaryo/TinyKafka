@@ -162,13 +162,13 @@ TEST(IntegrationTest, ServerHandlesApiVersionsValidVersion) {
     auto sent = send(sock, request.data(), request.size(), 0);
     ASSERT_GE(sent, 0) << "Failed to send request";
 
-    auto response = read_exactly<30>(sock);
+    auto response = read_exactly<37>(sock);
     close(sock);
 
     EXPECT_EQ(response[0], 0x00);
     EXPECT_EQ(response[1], 0x00);
     EXPECT_EQ(response[2], 0x00);
-    EXPECT_EQ(response[3], 0x1a); // message_size = 26
+    EXPECT_EQ(response[3], 0x21); // message_size = 33
 
     int32_t echoed_correlation_id =
         decode_int32_be_response(std::span<const uint8_t, 4>{response.data() + 4, 4});
@@ -177,26 +177,33 @@ TEST(IntegrationTest, ServerHandlesApiVersionsValidVersion) {
     int16_t error_code =
         (static_cast<int16_t>(response[8]) << 8) | static_cast<int16_t>(response[9]);
     EXPECT_EQ(error_code, 0);
-    EXPECT_EQ(response[10], 0x03); // compact array length = 2 (varint: 2+1)
+    EXPECT_EQ(response[10], 0x04); // compact array length = 3 (varint: 3+1)
     EXPECT_EQ(response[11], 0x00);
-    EXPECT_EQ(response[12], 0x12); // api_key = 18
+    EXPECT_EQ(response[12], 0x01); // api_key = 1 (Fetch)
     EXPECT_EQ(response[13], 0x00);
     EXPECT_EQ(response[14], 0x00); // min_version = 0
     EXPECT_EQ(response[15], 0x00);
-    EXPECT_EQ(response[16], 0x04); // max_version = 4
+    EXPECT_EQ(response[16], 0x10); // max_version = 16
     EXPECT_EQ(response[17], 0x00); // TAG_BUFFER (entry 1)
     EXPECT_EQ(response[18], 0x00);
-    EXPECT_EQ(response[19], 0x4b); // api_key = 75
+    EXPECT_EQ(response[19], 0x12); // api_key = 18 (ApiVersions)
     EXPECT_EQ(response[20], 0x00);
     EXPECT_EQ(response[21], 0x00); // min_version = 0
     EXPECT_EQ(response[22], 0x00);
-    EXPECT_EQ(response[23], 0x00); // max_version = 0
+    EXPECT_EQ(response[23], 0x04); // max_version = 4
     EXPECT_EQ(response[24], 0x00); // TAG_BUFFER (entry 2)
     EXPECT_EQ(response[25], 0x00);
-    EXPECT_EQ(response[26], 0x00);
+    EXPECT_EQ(response[26], 0x4b); // api_key = 75 (DescribeTopicPartitions)
     EXPECT_EQ(response[27], 0x00);
-    EXPECT_EQ(response[28], 0x00); // throttle_time_ms = 0
-    EXPECT_EQ(response[29], 0x00); // TAG_BUFFER
+    EXPECT_EQ(response[28], 0x00); // min_version = 0
+    EXPECT_EQ(response[29], 0x00);
+    EXPECT_EQ(response[30], 0x00); // max_version = 0
+    EXPECT_EQ(response[31], 0x00); // TAG_BUFFER (entry 3)
+    EXPECT_EQ(response[32], 0x00);
+    EXPECT_EQ(response[33], 0x00);
+    EXPECT_EQ(response[34], 0x00);
+    EXPECT_EQ(response[35], 0x00); // throttle_time_ms = 0
+    EXPECT_EQ(response[36], 0x00); // TAG_BUFFER
 }
 
 TEST(IntegrationTest, ServerHandlesMultipleRequestsSameConnection) {
@@ -336,7 +343,7 @@ TEST(IntegrationTest, ServerHandlesApiVersionsUnsupportedVersion) {
     auto sent = send(sock, request.data(), request.size(), 0);
     ASSERT_GE(sent, 0) << "Failed to send request";
 
-    auto response = read_exactly<30>(sock);
+    auto response = read_exactly<37>(sock);
     close(sock);
 
     int32_t echoed_correlation_id =
@@ -517,4 +524,72 @@ TEST(IntegrationTest, ServerHandlesDescribeTopicPartitionsMultiTopicSorted) {
     EXPECT_EQ(body[offset], 0xFF);
 
     close(sock);
+}
+
+TEST(IntegrationTest, ApiVersionsResponseContainsFetchApiEntry) {
+    ServerProcess server;
+
+    int sock = server.connect_with_retry();
+    ASSERT_GE(sock, 0) << "Failed to connect to server";
+
+    auto request = build_request_header(kTestCorrelationId, 18, 4);
+    auto sent = send(sock, request.data(), request.size(), 0);
+    ASSERT_GE(sent, 0) << "Failed to send request";
+
+    auto len_prefix = read_exactly<4>(sock);
+    int32_t message_size = decode_int32_be_response(len_prefix);
+    EXPECT_GT(message_size, 0) << "message_size must be positive";
+
+    std::vector<uint8_t> body(message_size);
+    size_t total = 0;
+    while (total < body.size()) {
+        auto n = read(sock, body.data() + total, body.size() - total);
+        ASSERT_GT(n, 0) << "Failed to read response body";
+        total += static_cast<size_t>(n);
+    }
+    close(sock);
+
+    int32_t echoed_cid = (static_cast<int32_t>(body[0]) << 24) |
+                         (static_cast<int32_t>(body[1]) << 16) |
+                         (static_cast<int32_t>(body[2]) << 8) | static_cast<int32_t>(body[3]);
+    EXPECT_EQ(echoed_cid, kTestCorrelationId) << "Correlation ID mismatch";
+
+    int16_t error_code = (static_cast<int16_t>(body[4]) << 8) | static_cast<int16_t>(body[5]);
+    EXPECT_EQ(error_code, 0) << "Error code should be 0";
+
+    size_t offset = 6;
+    ASSERT_LT(offset + 1, body.size()) << "Body too short for compact array length";
+    uint32_t array_len = static_cast<uint32_t>(body[offset]);
+    offset += 1;
+    uint32_t entry_count = (array_len > 0) ? array_len - 1 : 0;
+    EXPECT_GE(entry_count, 3u) << "Must have at least three api key entries";
+
+    bool found_fetch = false;
+    bool found_apiversions = false;
+    bool found_describetopic = false;
+    for (uint32_t i = 0; i < entry_count; ++i) {
+        ASSERT_LE(offset + 7, body.size()) << "Truncated api key entry";
+        int16_t api_key =
+            (static_cast<int16_t>(body[offset]) << 8) | static_cast<int16_t>(body[offset + 1]);
+        int16_t min_ver =
+            (static_cast<int16_t>(body[offset + 2]) << 8) | static_cast<int16_t>(body[offset + 3]);
+        int16_t max_ver =
+            (static_cast<int16_t>(body[offset + 4]) << 8) | static_cast<int16_t>(body[offset + 5]);
+        if (api_key == 1) {
+            found_fetch = true;
+            EXPECT_EQ(min_ver, 0) << "MinVersion for Fetch must be 0";
+            EXPECT_GE(max_ver, 16) << "MaxVersion for Fetch must be at least 16";
+        }
+        if (api_key == 18) {
+            found_apiversions = true;
+        }
+        if (api_key == 75) {
+            found_describetopic = true;
+        }
+        offset += 7;
+    }
+    EXPECT_TRUE(found_fetch) << "Fetch API (key=1) entry not found in response";
+    EXPECT_TRUE(found_apiversions) << "ApiVersions (key=18) entry not found in response";
+    EXPECT_TRUE(found_describetopic)
+        << "DescribeTopicPartitions (key=75) entry not found in response";
 }

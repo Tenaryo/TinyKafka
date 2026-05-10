@@ -157,3 +157,17 @@ TEST(BrokerTest, SortsDescribeTopicPartitionsMultiTopicAlphabetically) {
     EXPECT_EQ(r->topics[1].topic_name, "zebra");
     EXPECT_EQ(r->topics[1].partitions[0].partition_index, 1);
 }
+
+TEST(BrokerTest, ReturnsFetchApiEntryWithMaxVersion16) {
+    RequestHeader header{18, 4, 42};
+    ApiVersionsRequest req{header};
+
+    auto resp = Broker(ClusterMetadata{}).handle(req);
+    auto& r = std::get<ApiVersionsResponse>(resp);
+    EXPECT_EQ(r.error_code, 0);
+    ASSERT_FALSE(r.api_keys.empty());
+    auto it = std::ranges::find_if(r.api_keys, [](const auto& e) {
+        return e.api_key == 1 && e.min_version == 0 && e.max_version == 16;
+    });
+    EXPECT_NE(it, r.api_keys.end()) << "Fetch API (key=1) entry not found";
+}
