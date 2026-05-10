@@ -139,3 +139,21 @@ TEST(BrokerTest, HandlesDescribeTopicPartitionsTopicNotFoundInMetadata) {
     }
     EXPECT_TRUE(r->topics[0].partitions.empty());
 }
+
+TEST(BrokerTest, SortsDescribeTopicPartitionsMultiTopicAlphabetically) {
+    ClusterMetadata meta;
+    meta.topics["apple"] = {.uuid = {}, .partitions = {0}};
+    meta.topics["zebra"] = {.uuid = {}, .partitions = {1}};
+
+    RequestHeader header{75, 0, 42};
+    DescribeTopicPartitionsRequest req{header, {"zebra", "apple"}};
+
+    auto resp = Broker(std::move(meta)).handle(req);
+    auto r = std::get_if<DescribeTopicPartitionsResponse>(&resp);
+    ASSERT_NE(r, nullptr);
+    ASSERT_EQ(r->topics.size(), 2u);
+    EXPECT_EQ(r->topics[0].topic_name, "apple");
+    EXPECT_EQ(r->topics[0].partitions[0].partition_index, 0);
+    EXPECT_EQ(r->topics[1].topic_name, "zebra");
+    EXPECT_EQ(r->topics[1].partitions[0].partition_index, 1);
+}

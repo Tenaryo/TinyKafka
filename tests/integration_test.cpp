@@ -417,3 +417,104 @@ TEST(IntegrationTest, ServerHandlesDescribeTopicPartitionsUnknownTopic) {
     EXPECT_EQ(response[43], 0xFF); // next_cursor = -1 (null)
     EXPECT_EQ(response[44], 0x00); // body TAG_BUFFER
 }
+
+TEST(IntegrationTest, ServerHandlesDescribeTopicPartitionsMultiTopicSorted) {
+    ServerProcess server;
+
+    int sock = server.connect_with_retry();
+    ASSERT_GE(sock, 0) << "Failed to connect to server";
+
+    std::vector<uint8_t> request;
+    auto push_be16 = [&](int16_t v) {
+        request.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        request.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto push_be32 = [&](int32_t v) {
+        request.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+        request.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        request.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        request.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    request.reserve(35);
+    push_be32(32);
+    push_be16(75);
+    push_be16(0);
+    push_be32(kTestCorrelationId);
+    request.push_back(0xFF);
+    request.push_back(0xFF);
+    request.push_back(0x00);
+    request.push_back(0x03);
+    request.push_back(0x06);
+    request.push_back('z');
+    request.push_back('e');
+    request.push_back('b');
+    request.push_back('r');
+    request.push_back('a');
+    request.push_back(0x00);
+    request.push_back(0x06);
+    request.push_back('a');
+    request.push_back('p');
+    request.push_back('p');
+    request.push_back('l');
+    request.push_back('e');
+    request.push_back(0x00);
+    push_be32(0);
+    request.push_back(0xFF);
+    request.push_back(0x00);
+
+    auto sent = send(sock, request.data(), request.size(), 0);
+    ASSERT_GE(sent, 0) << "Failed to send request";
+
+    auto len_prefix = read_exactly<4>(sock);
+    int32_t message_size = decode_int32_be_response(len_prefix);
+    EXPECT_GT(message_size, 0) << "message_size must be positive";
+
+    std::vector<uint8_t> body(message_size);
+    size_t total = 0;
+    while (total < body.size()) {
+        auto n = read(sock, body.data() + total, body.size() - total);
+        ASSERT_GT(n, 0) << "Failed to read response body";
+        total += static_cast<size_t>(n);
+    }
+
+    int32_t echoed_cid = (static_cast<int32_t>(body[0]) << 24) |
+                         (static_cast<int32_t>(body[1]) << 16) |
+                         (static_cast<int32_t>(body[2]) << 8) | static_cast<int32_t>(body[3]);
+    EXPECT_EQ(echoed_cid, kTestCorrelationId);
+
+    EXPECT_EQ(body[4], 0x00);
+
+    size_t offset = 9;
+    ASSERT_LT(offset + 1, body.size());
+    uint32_t topics_len = static_cast<uint32_t>(body[offset]);
+    uint32_t topic_count = (topics_len > 0) ? topics_len - 1 : 0;
+    offset += 1;
+
+    std::vector<std::string> response_names;
+    for (uint32_t i = 0; i < topic_count; ++i) {
+        ASSERT_LT(offset + 1, body.size());
+        offset += 2;
+        ASSERT_LT(offset, body.size());
+        uint32_t name_len = static_cast<uint32_t>(body[offset]) - 1;
+        offset += 1;
+        ASSERT_LE(offset + name_len, body.size());
+        std::string name(body.begin() + static_cast<ptrdiff_t>(offset),
+                         body.begin() + static_cast<ptrdiff_t>(offset + name_len));
+        response_names.push_back(name);
+        offset += name_len + 16 + 1;
+        ASSERT_LT(offset + 1, body.size());
+        uint32_t parts_len = static_cast<uint32_t>(body[offset]);
+        uint32_t part_count = (parts_len > 0) ? parts_len - 1 : 0;
+        offset += 1 + part_count * 35;
+        offset += 5;
+    }
+
+    ASSERT_EQ(response_names.size(), 2u);
+    EXPECT_EQ(response_names[0], "apple");
+    EXPECT_EQ(response_names[1], "zebra");
+
+    ASSERT_LT(offset + 1, body.size());
+    EXPECT_EQ(body[offset], 0xFF);
+
+    close(sock);
+}

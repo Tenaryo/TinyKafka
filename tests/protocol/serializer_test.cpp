@@ -206,3 +206,126 @@ TEST(SerializerTest, SerializesFullApiVersionsResponse) {
     EXPECT_EQ(bytes[21], 0xd2); // throttle_time_ms = 1234
     EXPECT_EQ(bytes[22], 0x00); // TAG_BUFFER
 }
+
+TEST(SerializerTest, SerializesDescribeTopicPartitionsMultiTopic) {
+    DescribeTopicPartitionsResponse resp{
+        .correlation_id = 0x12345678,
+        .throttle_time_ms = 0,
+        .topics =
+            {
+                TopicMetadata{
+                    .error_code = 0,
+                    .topic_name = "apple",
+                    .topic_id = {0xa1,
+                                 0xb2,
+                                 0xc3,
+                                 0xd4,
+                                 0xe5,
+                                 0xf6,
+                                 0xa7,
+                                 0xb8,
+                                 0xc9,
+                                 0xd0,
+                                 0xe1,
+                                 0xf2,
+                                 0xa3,
+                                 0xb4,
+                                 0xc5,
+                                 0xd6},
+                    .is_internal = false,
+                    .authorized_operations = 0,
+                    .partitions =
+                        {
+                            PartitionMetadata{
+                                .error_code = 0,
+                                .partition_index = 0,
+                                .leader_id = 1,
+                                .leader_epoch = 0,
+                                .replica_nodes = {1},
+                                .isr_nodes = {1},
+                                .eligible_leader_replicas = {},
+                                .last_known_elr = {},
+                                .offline_replicas = {},
+                            },
+                        },
+                },
+                TopicMetadata{
+                    .error_code = 0,
+                    .topic_name = "zebra",
+                    .topic_id = {0xa1,
+                                 0xb2,
+                                 0xc3,
+                                 0xd4,
+                                 0xe5,
+                                 0xf6,
+                                 0xa7,
+                                 0xb8,
+                                 0xc9,
+                                 0xd0,
+                                 0xe1,
+                                 0xf2,
+                                 0xa3,
+                                 0xb4,
+                                 0xc5,
+                                 0xd6},
+                    .is_internal = false,
+                    .authorized_operations = 0,
+                    .partitions =
+                        {
+                            PartitionMetadata{
+                                .error_code = 0,
+                                .partition_index = 0,
+                                .leader_id = 1,
+                                .leader_epoch = 0,
+                                .replica_nodes = {1},
+                                .isr_nodes = {1},
+                                .eligible_leader_replicas = {},
+                                .last_known_elr = {},
+                                .offline_replicas = {},
+                            },
+                            PartitionMetadata{
+                                .error_code = 0,
+                                .partition_index = 1,
+                                .leader_id = 1,
+                                .leader_epoch = 0,
+                                .replica_nodes = {1},
+                                .isr_nodes = {1},
+                                .eligible_leader_replicas = {},
+                                .last_known_elr = {},
+                                .offline_replicas = {},
+                            },
+                        },
+                },
+            },
+    };
+    auto bytes = serialize(resp);
+
+    ASSERT_EQ(bytes.size(), 162);
+    EXPECT_EQ(bytes[0], 0x00);
+    EXPECT_EQ(bytes[1], 0x00);
+    EXPECT_EQ(bytes[2], 0x00);
+    EXPECT_EQ(bytes[3], 0x9E);  // message_size = 158
+    EXPECT_EQ(bytes[8], 0x00);  // TAG_BUFFER (response header v1)
+    EXPECT_EQ(bytes[13], 0x03); // topics array length = 2
+
+    EXPECT_EQ(bytes[14], 0x00);
+    EXPECT_EQ(bytes[15], 0x00);
+    EXPECT_EQ(bytes[16], 0x06);
+    EXPECT_EQ(bytes[17], 'a');
+    EXPECT_EQ(bytes[18], 'p');
+    EXPECT_EQ(bytes[19], 'p');
+    EXPECT_EQ(bytes[20], 'l');
+    EXPECT_EQ(bytes[21], 'e');
+
+    EXPECT_EQ(bytes[73], 0x00);
+    EXPECT_EQ(bytes[74], 0x00);
+    EXPECT_EQ(bytes[75], 0x06);
+    EXPECT_EQ(bytes[76], 'z');
+    EXPECT_EQ(bytes[77], 'e');
+    EXPECT_EQ(bytes[78], 'b');
+    EXPECT_EQ(bytes[79], 'r');
+    EXPECT_EQ(bytes[80], 'a');
+
+    EXPECT_EQ(bytes[160], 0xFF); // next_cursor = -1 (null)
+    EXPECT_EQ(bytes[161], 0x00); // body TAG_BUFFER
+}

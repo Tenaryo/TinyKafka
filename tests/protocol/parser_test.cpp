@@ -76,3 +76,49 @@ TEST(ParserTest, ParsesDescribeTopicPartitionsRequest) {
     EXPECT_EQ(req->topic_names.size(), 1u);
     EXPECT_EQ(req->topic_names[0], "foo");
 }
+
+TEST(ParserTest, ParsesMultipleTopicsWithTailFields) {
+    std::vector<std::uint8_t> buf;
+    buf.push_back(0x00);
+    buf.push_back(0x4B);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x07);
+    buf.push_back(0xFF);
+    buf.push_back(0xFF);
+    buf.push_back(0x00);
+    buf.push_back(0x03);
+    buf.push_back(0x06);
+    buf.push_back('z');
+    buf.push_back('e');
+    buf.push_back('b');
+    buf.push_back('r');
+    buf.push_back('a');
+    buf.push_back(0x00);
+    buf.push_back(0x06);
+    buf.push_back('a');
+    buf.push_back('p');
+    buf.push_back('p');
+    buf.push_back('l');
+    buf.push_back('e');
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x64);
+    buf.push_back(0xFF);
+    buf.push_back(0x00);
+
+    auto result = parse_request(buf);
+    ASSERT_TRUE(result.has_value());
+
+    auto req = std::get_if<DescribeTopicPartitionsRequest>(&*result);
+    ASSERT_NE(req, nullptr);
+    EXPECT_EQ(req->header.api_key, 75);
+    ASSERT_EQ(req->topic_names.size(), 2u);
+    EXPECT_EQ(req->topic_names[0], "zebra");
+    EXPECT_EQ(req->topic_names[1], "apple");
+}
