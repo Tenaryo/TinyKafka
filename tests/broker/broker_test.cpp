@@ -31,9 +31,13 @@ TEST(BrokerTest, ReturnsApiKeysForValidVersion) {
     auto& r = std::get<ApiVersionsResponse>(resp);
     EXPECT_EQ(r.error_code, 0);
     ASSERT_FALSE(r.api_keys.empty());
-    auto it = std::ranges::find_if(r.api_keys, [](const auto& e) {
+    auto it18 = std::ranges::find_if(r.api_keys, [](const auto& e) {
         return e.api_key == 18 && e.min_version == 0 && e.max_version == 4;
     });
-    EXPECT_NE(it, r.api_keys.end());
+    EXPECT_NE(it18, r.api_keys.end());
+    auto it75 = std::ranges::find_if(r.api_keys, [](const auto& e) {
+        return e.api_key == 75 && e.min_version == 0 && e.max_version == 0;
+    });
+    EXPECT_NE(it75, r.api_keys.end());
     EXPECT_EQ(r.throttle_time_ms, 0);
 }
