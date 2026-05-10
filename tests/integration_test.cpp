@@ -255,10 +255,11 @@ void verify_api_versions_response(int32_t expected_correlation_id, const std::ve
     uint32_t array_len = static_cast<uint32_t>(body[offset]);
     offset += 1;
     uint32_t entry_count = (array_len > 0) ? array_len - 1 : 0;
-    EXPECT_GE(entry_count, 1u) << "Must have at least one api key entry";
+    EXPECT_GE(entry_count, 2u) << "Must have at least two api key entries";
     EXPECT_EQ(body.size() - offset, entry_count * 7 + 4 + 1) << "Response body has extra bytes";
 
     bool found_api18 = false;
+    bool found_api75 = false;
     for (uint32_t i = 0; i < entry_count; ++i) {
         ASSERT_LE(offset + 7, body.size()) << "Truncated api key entry";
         int16_t api_key = (static_cast<int16_t>(body[offset]) << 8) | static_cast<int16_t>(body[offset + 1]);
@@ -269,9 +270,15 @@ void verify_api_versions_response(int32_t expected_correlation_id, const std::ve
             EXPECT_EQ(min_ver, 0) << "MinVersion for ApiKey 18 must be 0";
             EXPECT_EQ(max_ver, 4) << "MaxVersion for ApiKey 18 must be 4";
         }
+        if (api_key == 75) {
+            found_api75 = true;
+            EXPECT_EQ(min_ver, 0) << "MinVersion for ApiKey 75 must be 0";
+            EXPECT_EQ(max_ver, 0) << "MaxVersion for ApiKey 75 must be 0";
+        }
         offset += 7;
     }
     EXPECT_TRUE(found_api18) << "ApiKey 18 not found in response";
+    EXPECT_TRUE(found_api75) << "ApiKey 75 not found in response";
 }
 
 TEST(IntegrationTest, ServerHandlesTwoConcurrentClients) {
