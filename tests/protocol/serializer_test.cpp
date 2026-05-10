@@ -46,6 +46,7 @@ TEST(SerializerTest, SerializesDescribeTopicPartitionsUnknownTopic) {
                     .topic_id = {},
                     .is_internal = false,
                     .authorized_operations = 0,
+                    .partitions = {},
                 },
             },
     };
@@ -81,6 +82,94 @@ TEST(SerializerTest, SerializesDescribeTopicPartitionsUnknownTopic) {
     EXPECT_EQ(bytes[42], 0x00); // topic TAG_BUFFER
     EXPECT_EQ(bytes[43], 0xFF); // next_cursor = -1 (null)
     EXPECT_EQ(bytes[44], 0x00); // body TAG_BUFFER
+}
+
+TEST(SerializerTest, SerializesDescribeTopicPartitionsWithPartition) {
+    DescribeTopicPartitionsResponse resp{
+        .correlation_id = 0x12345678,
+        .throttle_time_ms = 0,
+        .topics =
+            {
+                TopicMetadata{
+                    .error_code = 0,
+                    .topic_name = "foo",
+                    .topic_id = {0xa1,
+                                 0xb2,
+                                 0xc3,
+                                 0xd4,
+                                 0xe5,
+                                 0xf6,
+                                 0xa7,
+                                 0xb8,
+                                 0xc9,
+                                 0xd0,
+                                 0xe1,
+                                 0xf2,
+                                 0xa3,
+                                 0xb4,
+                                 0xc5,
+                                 0xd6},
+                    .is_internal = false,
+                    .authorized_operations = 0,
+                    .partitions =
+                        {
+                            PartitionMetadata{
+                                .error_code = 0,
+                                .partition_index = 0,
+                                .leader_id = 1,
+                                .leader_epoch = 0,
+                                .replica_nodes = {1},
+                                .isr_nodes = {1},
+                                .eligible_leader_replicas = {},
+                                .last_known_elr = {},
+                                .offline_replicas = {},
+                            },
+                        },
+                },
+            },
+    };
+    auto bytes = serialize(resp);
+
+    ASSERT_EQ(bytes.size(), 73);
+    EXPECT_EQ(bytes[0], 0x00);
+    EXPECT_EQ(bytes[1], 0x00);
+    EXPECT_EQ(bytes[2], 0x00);
+    EXPECT_EQ(bytes[3], 0x45);  // message_size = 69
+    EXPECT_EQ(bytes[8], 0x00);  // TAG_BUFFER (response header v1)
+    EXPECT_EQ(bytes[13], 0x02); // topics array length = 1
+    EXPECT_EQ(bytes[14], 0x00);
+    EXPECT_EQ(bytes[15], 0x00); // error_code = 0
+    EXPECT_EQ(bytes[16], 0x04); // topic_name varint = 3+1
+    EXPECT_EQ(bytes[17], 'f');
+    EXPECT_EQ(bytes[18], 'o');
+    EXPECT_EQ(bytes[19], 'o');
+    EXPECT_EQ(bytes[20], 0xa1); // topic_id
+    EXPECT_EQ(bytes[35], 0xd6);
+    EXPECT_EQ(bytes[36], 0x00); // is_internal = false
+    EXPECT_EQ(bytes[37], 0x02); // partitions array length = 1
+    EXPECT_EQ(bytes[38], 0x00);
+    EXPECT_EQ(bytes[39], 0x00); // partition error_code = 0
+    EXPECT_EQ(bytes[40], 0x00);
+    EXPECT_EQ(bytes[41], 0x00);
+    EXPECT_EQ(bytes[42], 0x00);
+    EXPECT_EQ(bytes[43], 0x00); // partition_index = 0
+    EXPECT_EQ(bytes[44], 0x00);
+    EXPECT_EQ(bytes[45], 0x00);
+    EXPECT_EQ(bytes[46], 0x00);
+    EXPECT_EQ(bytes[47], 0x01); // leader_id = 1
+    EXPECT_EQ(bytes[52], 0x02); // replica_nodes varint = 1+1
+    EXPECT_EQ(bytes[53], 0x00);
+    EXPECT_EQ(bytes[54], 0x00);
+    EXPECT_EQ(bytes[55], 0x00);
+    EXPECT_EQ(bytes[56], 0x01); // broker 1
+    EXPECT_EQ(bytes[57], 0x02); // isr_nodes varint = 1+1
+    EXPECT_EQ(bytes[62], 0x01); // eligible_leader_replicas varint = 0+1
+    EXPECT_EQ(bytes[63], 0x01); // last_known_elr varint = 0+1
+    EXPECT_EQ(bytes[64], 0x01); // offline_replicas varint = 0+1
+    EXPECT_EQ(bytes[65], 0x00); // partition TAG_BUFFER
+    EXPECT_EQ(bytes[70], 0x00); // topic TAG_BUFFER
+    EXPECT_EQ(bytes[71], 0xFF); // next_cursor = -1
+    EXPECT_EQ(bytes[72], 0x00); // body TAG_BUFFER
 }
 
 TEST(SerializerTest, SerializesFullApiVersionsResponse) {
