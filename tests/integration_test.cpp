@@ -162,13 +162,13 @@ TEST(IntegrationTest, ServerHandlesApiVersionsValidVersion) {
     auto sent = send(sock, request.data(), request.size(), 0);
     ASSERT_GE(sent, 0) << "Failed to send request";
 
-    auto response = read_exactly<23>(sock);
+    auto response = read_exactly<30>(sock);
     close(sock);
 
     EXPECT_EQ(response[0], 0x00);
     EXPECT_EQ(response[1], 0x00);
     EXPECT_EQ(response[2], 0x00);
-    EXPECT_EQ(response[3], 0x13); // message_size = 19
+    EXPECT_EQ(response[3], 0x1a); // message_size = 26
 
     int32_t echoed_correlation_id =
         decode_int32_be_response(std::span<const uint8_t, 4>{response.data() + 4, 4});
@@ -177,19 +177,26 @@ TEST(IntegrationTest, ServerHandlesApiVersionsValidVersion) {
     int16_t error_code =
         (static_cast<int16_t>(response[8]) << 8) | static_cast<int16_t>(response[9]);
     EXPECT_EQ(error_code, 0);
-    EXPECT_EQ(response[10], 0x02); // compact array length = 1
+    EXPECT_EQ(response[10], 0x03);   // compact array length = 2 (varint: 2+1)
     EXPECT_EQ(response[11], 0x00);
-    EXPECT_EQ(response[12], 0x12); // api_key = 18
+    EXPECT_EQ(response[12], 0x12);   // api_key = 18
     EXPECT_EQ(response[13], 0x00);
-    EXPECT_EQ(response[14], 0x00); // min_version = 0
+    EXPECT_EQ(response[14], 0x00);   // min_version = 0
     EXPECT_EQ(response[15], 0x00);
-    EXPECT_EQ(response[16], 0x04); // max_version = 4
-    EXPECT_EQ(response[17], 0x00); // TAG_BUFFER (entry)
+    EXPECT_EQ(response[16], 0x04);   // max_version = 4
+    EXPECT_EQ(response[17], 0x00);   // TAG_BUFFER (entry 1)
     EXPECT_EQ(response[18], 0x00);
-    EXPECT_EQ(response[19], 0x00);
+    EXPECT_EQ(response[19], 0x4b);   // api_key = 75
     EXPECT_EQ(response[20], 0x00);
-    EXPECT_EQ(response[21], 0x00); // throttle_time_ms = 0
-    EXPECT_EQ(response[22], 0x00); // TAG_BUFFER
+    EXPECT_EQ(response[21], 0x00);   // min_version = 0
+    EXPECT_EQ(response[22], 0x00);
+    EXPECT_EQ(response[23], 0x00);   // max_version = 0
+    EXPECT_EQ(response[24], 0x00);   // TAG_BUFFER (entry 2)
+    EXPECT_EQ(response[25], 0x00);
+    EXPECT_EQ(response[26], 0x00);
+    EXPECT_EQ(response[27], 0x00);
+    EXPECT_EQ(response[28], 0x00);   // throttle_time_ms = 0
+    EXPECT_EQ(response[29], 0x00);   // TAG_BUFFER
 }
 
 TEST(IntegrationTest, ServerHandlesMultipleRequestsSameConnection) {
