@@ -9,6 +9,7 @@
 #include <string>
 #include <sys/socket.h>
 #include <sys/wait.h>
+#include <thread>
 #include <unistd.h>
 
 #include <arpa/inet.h>
@@ -229,6 +230,82 @@ TEST(IntegrationTest, ServerHandlesMultipleRequestsSameConnection) {
     }
 
     close(sock);
+}
+
+void verify_api_versions_response(int32_t expected_correlation_id, const std::vector<uint8_t>& body) {
+    ASSERT_GE(body.size(), 6u) << "Response body too short";
+
+    int32_t echoed_cid = (static_cast<int32_t>(body[0]) << 24) |
+                         (static_cast<int32_t>(body[1]) << 16) |
+                         (static_cast<int32_t>(body[2]) << 8) | static_cast<int32_t>(body[3]);
+    EXPECT_EQ(echoed_cid, expected_correlation_id) << "Correlation ID mismatch";
+
+    int16_t error_code = (static_cast<int16_t>(body[4]) << 8) | static_cast<int16_t>(body[5]);
+    EXPECT_EQ(error_code, 0) << "Error code should be 0";
+
+    size_t offset = 6;
+    ASSERT_LT(offset + 1, body.size()) << "Body too short for compact array length";
+    uint32_t array_len = static_cast<uint32_t>(body[offset]);
+    offset += 1;
+    uint32_t entry_count = (array_len > 0) ? array_len - 1 : 0;
+    EXPECT_GE(entry_count, 1u) << "Must have at least one api key entry";
+    EXPECT_EQ(body.size() - offset, entry_count * 7 + 4 + 1) << "Response body has extra bytes";
+
+    bool found_api18 = false;
+    for (uint32_t i = 0; i < entry_count; ++i) {
+        ASSERT_LE(offset + 7, body.size()) << "Truncated api key entry";
+        int16_t api_key = (static_cast<int16_t>(body[offset]) << 8) | static_cast<int16_t>(body[offset + 1]);
+        int16_t min_ver = (static_cast<int16_t>(body[offset + 2]) << 8) | static_cast<int16_t>(body[offset + 3]);
+        int16_t max_ver = (static_cast<int16_t>(body[offset + 4]) << 8) | static_cast<int16_t>(body[offset + 5]);
+        if (api_key == 18) {
+            found_api18 = true;
+            EXPECT_EQ(min_ver, 0) << "MinVersion for ApiKey 18 must be 0";
+            EXPECT_EQ(max_ver, 4) << "MaxVersion for ApiKey 18 must be 4";
+        }
+        offset += 7;
+    }
+    EXPECT_TRUE(found_api18) << "ApiKey 18 not found in response";
+}
+
+TEST(IntegrationTest, ServerHandlesTwoConcurrentClients) {
+    ServerProcess server;
+
+    auto client_task = [&](int base_cid) {
+        int sock = server.connect_with_retry();
+        ASSERT_GE(sock, 0) << "Client " << base_cid << " failed to connect";
+
+        for (int i = 0; i < 3; ++i) {
+            int32_t cid = static_cast<int32_t>(base_cid + i);
+            auto request = build_request_header(cid, 18, 4);
+            auto sent = send(sock, request.data(), request.size(), 0);
+            ASSERT_GE(sent, 0) << "Client " << base_cid << " failed to send request " << i;
+
+            auto len_prefix = read_exactly<4>(sock);
+            int32_t message_size = (static_cast<int32_t>(len_prefix[0]) << 24) |
+                                    (static_cast<int32_t>(len_prefix[1]) << 16) |
+                                    (static_cast<int32_t>(len_prefix[2]) << 8) |
+                                    static_cast<int32_t>(len_prefix[3]);
+            EXPECT_GT(message_size, 0) << "message_size must be positive";
+
+            std::vector<uint8_t> body(message_size);
+            size_t total = 0;
+            while (total < body.size()) {
+                auto n = read(sock, body.data() + total, body.size() - total);
+                ASSERT_GT(n, 0) << "Client " << base_cid << " failed to read response body " << i;
+                total += static_cast<size_t>(n);
+            }
+
+            verify_api_versions_response(cid, body);
+        }
+
+        close(sock);
+    };
+
+    std::thread t1(client_task, 100);
+    std::thread t2(client_task, 400);
+
+    t1.join();
+    t2.join();
 }
 
 TEST(IntegrationTest, ServerHandlesApiVersionsUnsupportedVersion) {
