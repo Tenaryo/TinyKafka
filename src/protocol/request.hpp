@@ -36,4 +36,19 @@ struct FetchRequest {
     int32_t max_bytes = 0;
 };
 
-using Request = std::variant<ApiVersionsRequest, DescribeTopicPartitionsRequest, FetchRequest>;
+struct ProducePartitionRequest {
+    int32_t partition_index = 0;
+};
+
+struct ProduceTopicRequest {
+    std::string topic_name;
+    std::vector<ProducePartitionRequest> partitions;
+};
+
+struct ProduceRequest {
+    RequestHeader header;
+    std::vector<ProduceTopicRequest> topics;
+};
+
+using Request =
+    std::variant<ApiVersionsRequest, DescribeTopicPartitionsRequest, FetchRequest, ProduceRequest>;

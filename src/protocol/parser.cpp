@@ -198,6 +198,98 @@ auto parse_request(std::span<const std::uint8_t> buf) -> std::expected<Request, 
         return FetchRequest{
             RequestHeader{*api_key, *api_version, *correlation_id}, std::move(topics), *max_bytes};
     }
+    case 0: {
+        auto client_id_len = reader.read_int16();
+        if (!client_id_len)
+            return std::unexpected(client_id_len.error());
+        if (*client_id_len > 0) {
+            auto skip_client = reader.skip(static_cast<size_t>(*client_id_len));
+            if (!skip_client)
+                return std::unexpected(skip_client.error());
+        }
+        auto header_tag = reader.skip(1); // TAG_BUFFER
+        if (!header_tag)
+            return std::unexpected(header_tag.error());
+
+        auto tx_id_len = reader.read_varint();
+        if (!tx_id_len)
+            return std::unexpected(tx_id_len.error());
+        if (*tx_id_len > 1) {
+            auto skip_tx = reader.skip(static_cast<size_t>(*tx_id_len - 1));
+            if (!skip_tx)
+                return std::unexpected(skip_tx.error());
+        }
+
+        auto acks = reader.read_int16();
+        if (!acks)
+            return std::unexpected(acks.error());
+
+        auto timeout = reader.read_int32();
+        if (!timeout)
+            return std::unexpected(timeout.error());
+
+        auto topic_array_len = reader.read_varint();
+        if (!topic_array_len)
+            return std::unexpected(topic_array_len.error());
+        uint32_t topic_count = *topic_array_len > 0 ? *topic_array_len - 1 : 0;
+
+        std::vector<ProduceTopicRequest> topics;
+        topics.reserve(topic_count);
+        for (uint32_t ti = 0; ti < topic_count; ++ti) {
+            auto name = reader.read_compact_string();
+            if (!name)
+                return std::unexpected(name.error());
+
+            auto topic_tag = reader.skip(1); // TAG_BUFFER
+            if (!topic_tag)
+                return std::unexpected(topic_tag.error());
+
+            auto part_array_len = reader.read_varint();
+            if (!part_array_len)
+                return std::unexpected(part_array_len.error());
+            uint32_t part_count = *part_array_len > 0 ? *part_array_len - 1 : 0;
+
+            std::vector<ProducePartitionRequest> parts;
+            parts.reserve(part_count);
+            for (uint32_t pi = 0; pi < part_count; ++pi) {
+                auto part_idx = reader.read_int32();
+                if (!part_idx)
+                    return std::unexpected(part_idx.error());
+
+                auto part_tag = reader.skip(1); // TAG_BUFFER
+                if (!part_tag)
+                    return std::unexpected(part_tag.error());
+
+                auto records_len = reader.read_varint();
+                if (!records_len)
+                    return std::unexpected(records_len.error());
+                if (*records_len > 1) {
+                    auto skip_records = reader.skip(static_cast<size_t>(*records_len - 1));
+                    if (!skip_records)
+                        return std::unexpected(skip_records.error());
+                }
+
+                auto rec_tag = reader.skip(1); // TAG_BUFFER
+                if (!rec_tag)
+                    return std::unexpected(rec_tag.error());
+
+                parts.push_back({.partition_index = *part_idx});
+            }
+
+            auto topic_end_tag = reader.skip(1); // TAG_BUFFER
+            if (!topic_end_tag)
+                return std::unexpected(topic_end_tag.error());
+
+            topics.push_back({.topic_name = std::move(*name), .partitions = std::move(parts)});
+        }
+
+        auto body_tag = reader.skip(1); // TAG_BUFFER
+        if (!body_tag)
+            return std::unexpected(body_tag.error());
+
+        return ProduceRequest{RequestHeader{*api_key, *api_version, *correlation_id},
+                              std::move(topics)};
+    }
     default:
         return std::unexpected(make_error_code(std::errc::function_not_supported));
     }

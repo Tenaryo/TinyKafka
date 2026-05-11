@@ -81,6 +81,30 @@ auto Broker::handle(const Request& req) -> Response {
                     .topics = std::move(topics),
                 };
             },
+            [this](const ProduceRequest& r) -> Response {
+                std::vector<ProduceTopicResponse> topic_responses;
+                topic_responses.reserve(r.topics.size());
+                for (const auto& topic_req : r.topics) {
+                    std::vector<ProducePartitionResponse> parts;
+                    parts.reserve(topic_req.partitions.size());
+                    for (const auto& part_req : topic_req.partitions) {
+                        parts.push_back(ProducePartitionResponse{
+                            .partition_index = part_req.partition_index,
+                            .error_code = 3,
+                            .base_offset = -1,
+                            .log_append_time_ms = -1,
+                            .log_start_offset = -1,
+                        });
+                    }
+                    topic_responses.push_back(
+                        {.topic_name = topic_req.topic_name, .partitions = std::move(parts)});
+                }
+                return ProduceResponse{
+                    .correlation_id = r.header.correlation_id,
+                    .throttle_time_ms = 0,
+                    .responses = std::move(topic_responses),
+                };
+            },
             [this](const FetchRequest& r) -> Response {
                 std::vector<FetchTopicResponse> topic_responses;
                 topic_responses.reserve(r.topics.size());

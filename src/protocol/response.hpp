@@ -65,4 +65,24 @@ struct FetchResponse {
     std::vector<FetchTopicResponse> responses;
 };
 
-using Response = std::variant<ApiVersionsResponse, DescribeTopicPartitionsResponse, FetchResponse>;
+struct ProducePartitionResponse {
+    int32_t partition_index = 0;
+    int16_t error_code = 0;
+    int64_t base_offset = -1;
+    int64_t log_append_time_ms = -1;
+    int64_t log_start_offset = -1;
+};
+
+struct ProduceTopicResponse {
+    std::string topic_name;
+    std::vector<ProducePartitionResponse> partitions;
+};
+
+struct ProduceResponse {
+    int32_t correlation_id;
+    int32_t throttle_time_ms;
+    std::vector<ProduceTopicResponse> responses;
+};
+
+using Response = std::
+    variant<ApiVersionsResponse, DescribeTopicPartitionsResponse, FetchResponse, ProduceResponse>;

@@ -174,6 +174,53 @@ auto serialize(const Response& resp) -> std::vector<std::uint8_t> {
                 writer.write_int8(0x00); // body TAG_BUFFER
                 return buf;
             },
+            [](const ProduceResponse& r) -> std::vector<std::uint8_t> {
+                size_t body_size = 4 + 1;
+                body_size += varint_encoded_size(static_cast<uint32_t>(r.responses.size()) + 1);
+                for (const auto& t : r.responses) {
+                    uint32_t name_varint = static_cast<uint32_t>(t.topic_name.size()) + 1;
+                    body_size += varint_encoded_size(name_varint) + t.topic_name.size() + 1;
+                    if (t.partitions.empty()) {
+                        body_size += 1;
+                    } else {
+                        uint32_t part_count = static_cast<uint32_t>(t.partitions.size()) + 1;
+                        body_size += varint_encoded_size(part_count);
+                        body_size += t.partitions.size() * (4 + 2 + 8 + 8 + 8 + 1 + 1 + 1);
+                    }
+                }
+                body_size += 4;
+                body_size += 1;
+
+                std::vector<uint8_t> buf(4 + body_size);
+                ByteWriter writer(buf);
+
+                writer.write_int32(static_cast<int32_t>(body_size));
+                writer.write_int32(r.correlation_id);
+                writer.write_int8(0x00); // header TAG_BUFFER
+
+                writer.write_varint(static_cast<uint32_t>(r.responses.size()) + 1);
+                for (const auto& t : r.responses) {
+                    writer.write_compact_string(t.topic_name);
+                    uint32_t part_count = static_cast<uint32_t>(t.partitions.size()) + 1;
+                    writer.write_varint(part_count);
+                    for (const auto& p : t.partitions) {
+                        writer.write_int32(p.partition_index);
+                        writer.write_int16(p.error_code);
+                        writer.write_int64(p.base_offset);
+                        writer.write_int64(p.log_append_time_ms);
+                        writer.write_int64(p.log_start_offset);
+                        writer.write_int8(0x01); // record_errors: empty (varint 1)
+                        writer.write_int8(0x00); // error_message: null (varint 0)
+                        writer.write_int8(0x00); // partition tagged_fields
+                    }
+                    writer.write_int8(0x00); // topic tagged_fields
+                }
+
+                writer.write_int32(r.throttle_time_ms);
+                writer.write_int8(0x00); // body tagged_fields
+
+                return buf;
+            },
         },
         resp);
 }
