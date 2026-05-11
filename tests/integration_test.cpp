@@ -617,7 +617,7 @@ TEST(IntegrationTest, ServerHandlesFetchRequestEmptyTopics) {
     push_be16(1);  // api_key = 1 (Fetch)
     push_be16(16); // api_version = 16
     push_be32(kTestCorrelationId);
-    request.push_back(0x01); // client_id = empty compact string
+    request.push_back(0x00); // client_id = null
     request.push_back(0x00); // header TAG_BUFFER
     push_be32(500);          // max_wait_ms
     push_be32(1);            // min_bytes

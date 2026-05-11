@@ -77,9 +77,14 @@ auto parse_request(std::span<const std::uint8_t> buf) -> std::expected<Request, 
             RequestHeader{*api_key, *api_version, *correlation_id}, std::move(topic_names)};
     }
     case 1: {
-        auto client_id = reader.read_compact_string();
-        if (!client_id)
-            return std::unexpected(client_id.error());
+        auto client_id_len = reader.read_varint();
+        if (!client_id_len)
+            return std::unexpected(client_id_len.error());
+        if (*client_id_len > 0) {
+            auto skip_client = reader.skip(static_cast<size_t>(*client_id_len - 1));
+            if (!skip_client)
+                return std::unexpected(skip_client.error());
+        }
         auto header_tag = reader.skip(1);
         if (!header_tag)
             return std::unexpected(header_tag.error());

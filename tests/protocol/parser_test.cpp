@@ -133,7 +133,7 @@ TEST(ParserTest, ParsesFetchV16Request) {
     buf.push_back(0x00);
     buf.push_back(0x00);
     buf.push_back(0x2A);
-    buf.push_back(0x01);
+    buf.push_back(0x00);
     buf.push_back(0x00);
     buf.push_back(0x00);
     buf.push_back(0x00);
