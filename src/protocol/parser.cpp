@@ -136,12 +136,16 @@ auto parse_request(std::span<const std::uint8_t> buf) -> std::expected<Request, 
             auto skip_ftid = reader.skip(16);
             if (!skip_ftid)
                 return std::unexpected(skip_ftid.error());
-            auto skip_fpart_len = reader.read_varint();
-            if (!skip_fpart_len)
-                return std::unexpected(skip_fpart_len.error());
-            auto skip_fpart_tag = reader.skip(1);
-            if (!skip_fpart_tag)
-                return std::unexpected(skip_fpart_tag.error());
+            auto fpart_len = reader.read_varint();
+            if (!fpart_len)
+                return std::unexpected(fpart_len.error());
+            uint32_t fpart_count = *fpart_len > 0 ? *fpart_len - 1 : 0;
+            auto skip_fparts = reader.skip(fpart_count * 4);
+            if (!skip_fparts)
+                return std::unexpected(skip_fparts.error());
+            auto skip_ftag = reader.skip(1);
+            if (!skip_ftag)
+                return std::unexpected(skip_ftag.error());
         }
 
         auto rack_id_len = reader.read_varint();

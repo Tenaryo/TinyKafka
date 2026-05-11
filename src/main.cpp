@@ -65,7 +65,7 @@ int main() {
 
                 auto req = parse_request(buf);
                 if (!req) {
-                    std::cerr << "Parse failed\n";
+                    std::cerr << "Parse failed: " << req.error().message() << '\n';
                     break;
                 }
 
