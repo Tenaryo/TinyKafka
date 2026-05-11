@@ -76,6 +76,16 @@ auto parse_request(std::span<const std::uint8_t> buf) -> std::expected<Request, 
         return DescribeTopicPartitionsRequest{
             RequestHeader{*api_key, *api_version, *correlation_id}, std::move(topic_names)};
     }
+    case 1: {
+        auto client_id = reader.read_compact_string();
+        if (!client_id)
+            return std::unexpected(client_id.error());
+        auto header_tag = reader.skip(1);
+        if (!header_tag)
+            return std::unexpected(header_tag.error());
+
+        return FetchRequest{RequestHeader{*api_key, *api_version, *correlation_id}};
+    }
     default:
         return std::unexpected(make_error_code(std::errc::function_not_supported));
     }

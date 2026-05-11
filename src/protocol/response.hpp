@@ -46,4 +46,14 @@ struct DescribeTopicPartitionsResponse {
     std::vector<TopicMetadata> topics;
 };
 
-using Response = std::variant<ApiVersionsResponse, DescribeTopicPartitionsResponse>;
+struct FetchTopicResponse {};
+
+struct FetchResponse {
+    int32_t correlation_id;
+    int32_t throttle_time_ms;
+    int16_t error_code;
+    int32_t session_id;
+    std::vector<FetchTopicResponse> responses;
+};
+
+using Response = std::variant<ApiVersionsResponse, DescribeTopicPartitionsResponse, FetchResponse>;

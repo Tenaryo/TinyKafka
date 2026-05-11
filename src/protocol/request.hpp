@@ -20,4 +20,8 @@ struct DescribeTopicPartitionsRequest {
     std::vector<std::string> topic_names;
 };
 
-using Request = std::variant<ApiVersionsRequest, DescribeTopicPartitionsRequest>;
+struct FetchRequest {
+    RequestHeader header;
+};
+
+using Request = std::variant<ApiVersionsRequest, DescribeTopicPartitionsRequest, FetchRequest>;
