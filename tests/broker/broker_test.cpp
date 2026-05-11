@@ -1,14 +1,41 @@
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
 
 #include "broker/broker.hpp"
 #include "cluster/metadata.hpp"
 
+using TopicId = std::array<uint8_t, 16>;
+
+namespace {
+
+auto make_meta_with_topic(std::string name,
+                          TopicId uuid,
+                          std::vector<int32_t> partitions) -> ClusterMetadata {
+    ClusterMetadata meta;
+    meta.topics.push_back(
+        {.name = std::move(name), .uuid = uuid, .partitions = std::move(partitions)});
+    size_t idx = meta.topics.size() - 1;
+    meta.name_to_topic[meta.topics[idx].name] = idx;
+    meta.uuid_to_topic[uuid] = idx;
+    return meta;
+}
+
+auto make_tmp_log_dir() -> std::string {
+    auto path =
+        std::filesystem::temp_directory_path() / ("tinytk_test_" + std::to_string(std::rand()));
+    std::filesystem::create_directories(path);
+    return path.string();
+}
+
+} // namespace
+
 TEST(BrokerTest, HandlesValidVersion) {
     RequestHeader header{18, 0, 42};
     ApiVersionsRequest req{header};
 
-    auto resp = Broker(ClusterMetadata{}).handle(req);
+    auto resp = Broker(ClusterMetadata{}, "").handle(req);
     auto& r = std::get<ApiVersionsResponse>(resp);
     EXPECT_EQ(r.correlation_id, 42);
     EXPECT_EQ(r.error_code, 0);
@@ -18,7 +45,7 @@ TEST(BrokerTest, HandlesUnsupportedVersion) {
     RequestHeader header{18, 26442, 42};
     ApiVersionsRequest req{header};
 
-    auto resp = Broker(ClusterMetadata{}).handle(req);
+    auto resp = Broker(ClusterMetadata{}, "").handle(req);
     auto& r = std::get<ApiVersionsResponse>(resp);
     EXPECT_EQ(r.correlation_id, 42);
     EXPECT_EQ(r.error_code, 35);
@@ -28,7 +55,7 @@ TEST(BrokerTest, HandlesDescribeTopicPartitionsUnknownTopic) {
     RequestHeader header{75, 0, 42};
     DescribeTopicPartitionsRequest req{header, {"foo"}};
 
-    auto resp = Broker(ClusterMetadata{}).handle(req);
+    auto resp = Broker(ClusterMetadata{}, "").handle(req);
     auto r = std::get_if<DescribeTopicPartitionsResponse>(&resp);
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->correlation_id, 42);
@@ -48,7 +75,7 @@ TEST(BrokerTest, ReturnsApiKeysForValidVersion) {
     RequestHeader header{18, 4, 42};
     ApiVersionsRequest req{header};
 
-    auto resp = Broker(ClusterMetadata{}).handle(req);
+    auto resp = Broker(ClusterMetadata{}, "").handle(req);
     auto& r = std::get<ApiVersionsResponse>(resp);
     EXPECT_EQ(r.error_code, 0);
     ASSERT_FALSE(r.api_keys.empty());
@@ -64,7 +91,7 @@ TEST(BrokerTest, ReturnsApiKeysForValidVersion) {
 }
 
 TEST(BrokerTest, HandlesDescribeTopicPartitionsKnownTopic) {
-    constexpr std::array<uint8_t, 16> topic_uuid = {
+    constexpr TopicId topic_uuid = {
         0xa1,
         0xb2,
         0xc3,
@@ -82,13 +109,12 @@ TEST(BrokerTest, HandlesDescribeTopicPartitionsKnownTopic) {
         0xc5,
         0xd6,
     };
-    ClusterMetadata meta;
-    meta.topics["foo"] = {.uuid = topic_uuid, .partitions = {0}};
+    auto meta = make_meta_with_topic("foo", topic_uuid, {0});
 
     RequestHeader header{75, 0, 42};
     DescribeTopicPartitionsRequest req{header, {"foo"}};
 
-    auto resp = Broker(std::move(meta)).handle(req);
+    auto resp = Broker(std::move(meta), "").handle(req);
     auto r = std::get_if<DescribeTopicPartitionsResponse>(&resp);
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->correlation_id, 42);
@@ -104,7 +130,7 @@ TEST(BrokerTest, HandlesDescribeTopicPartitionsKnownTopic) {
 }
 
 TEST(BrokerTest, HandlesDescribeTopicPartitionsTopicNotFoundInMetadata) {
-    constexpr std::array<uint8_t, 16> topic_uuid = {
+    constexpr TopicId topic_uuid = {
         0xa1,
         0xb2,
         0xc3,
@@ -122,13 +148,12 @@ TEST(BrokerTest, HandlesDescribeTopicPartitionsTopicNotFoundInMetadata) {
         0xc5,
         0xd6,
     };
-    ClusterMetadata meta;
-    meta.topics["foo"] = {.uuid = topic_uuid, .partitions = {0}};
+    auto meta = make_meta_with_topic("foo", topic_uuid, {0});
 
     RequestHeader header{75, 0, 42};
     DescribeTopicPartitionsRequest req{header, {"nonexistent"}};
 
-    auto resp = Broker(std::move(meta)).handle(req);
+    auto resp = Broker(std::move(meta), "").handle(req);
     auto r = std::get_if<DescribeTopicPartitionsResponse>(&resp);
     ASSERT_NE(r, nullptr);
     ASSERT_EQ(r->topics.size(), 1u);
@@ -141,14 +166,54 @@ TEST(BrokerTest, HandlesDescribeTopicPartitionsTopicNotFoundInMetadata) {
 }
 
 TEST(BrokerTest, SortsDescribeTopicPartitionsMultiTopicAlphabetically) {
+    constexpr TopicId uuid_a = {
+        0x01,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+    };
+    constexpr TopicId uuid_z = {
+        0x02,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+    };
     ClusterMetadata meta;
-    meta.topics["apple"] = {.uuid = {}, .partitions = {0}};
-    meta.topics["zebra"] = {.uuid = {}, .partitions = {1}};
+    meta.topics.push_back({.name = "apple", .uuid = uuid_a, .partitions = {0}});
+    meta.name_to_topic["apple"] = 0;
+    meta.uuid_to_topic[uuid_a] = 0;
+    meta.topics.push_back({.name = "zebra", .uuid = uuid_z, .partitions = {1}});
+    meta.name_to_topic["zebra"] = 1;
+    meta.uuid_to_topic[uuid_z] = 1;
 
     RequestHeader header{75, 0, 42};
     DescribeTopicPartitionsRequest req{header, {"zebra", "apple"}};
 
-    auto resp = Broker(std::move(meta)).handle(req);
+    auto resp = Broker(std::move(meta), "").handle(req);
     auto r = std::get_if<DescribeTopicPartitionsResponse>(&resp);
     ASSERT_NE(r, nullptr);
     ASSERT_EQ(r->topics.size(), 2u);
@@ -162,7 +227,7 @@ TEST(BrokerTest, ReturnsFetchApiEntryWithMaxVersion16) {
     RequestHeader header{18, 4, 42};
     ApiVersionsRequest req{header};
 
-    auto resp = Broker(ClusterMetadata{}).handle(req);
+    auto resp = Broker(ClusterMetadata{}, "").handle(req);
     auto& r = std::get<ApiVersionsResponse>(resp);
     EXPECT_EQ(r.error_code, 0);
     ASSERT_FALSE(r.api_keys.empty());
@@ -174,9 +239,9 @@ TEST(BrokerTest, ReturnsFetchApiEntryWithMaxVersion16) {
 
 TEST(BrokerTest, HandlesFetchRequestEmptyTopics) {
     RequestHeader header{1, 16, 42};
-    FetchRequest req{header, {}};
+    FetchRequest req{header, {}, 0};
 
-    auto resp = Broker(ClusterMetadata{}).handle(req);
+    auto resp = Broker(ClusterMetadata{}, "").handle(req);
     auto r = std::get_if<FetchResponse>(&resp);
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->correlation_id, 42);
@@ -187,7 +252,7 @@ TEST(BrokerTest, HandlesFetchRequestEmptyTopics) {
 }
 
 TEST(BrokerTest, HandlesFetchRequestUnknownTopic) {
-    constexpr std::array<uint8_t, 16> topic_uuid = {
+    constexpr TopicId topic_uuid = {
         0xa1,
         0xb2,
         0xc3,
@@ -206,9 +271,9 @@ TEST(BrokerTest, HandlesFetchRequestUnknownTopic) {
         0xd6,
     };
     RequestHeader header{1, 16, 42};
-    FetchRequest req{header, {topic_uuid}};
+    FetchRequest req{header, {{.topic_id = topic_uuid, .partitions = {{.partition_index = 0}}}}, 0};
 
-    auto resp = Broker(ClusterMetadata{}).handle(req);
+    auto resp = Broker(ClusterMetadata{}, "").handle(req);
     auto r = std::get_if<FetchResponse>(&resp);
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->correlation_id, 42);
@@ -223,7 +288,7 @@ TEST(BrokerTest, HandlesFetchRequestUnknownTopic) {
 }
 
 TEST(BrokerTest, HandlesFetchRequestKnownTopicNoMessages) {
-    constexpr std::array<uint8_t, 16> topic_uuid = {
+    constexpr TopicId topic_uuid = {
         0xa1,
         0xb2,
         0xc3,
@@ -241,13 +306,15 @@ TEST(BrokerTest, HandlesFetchRequestKnownTopicNoMessages) {
         0xc5,
         0xd6,
     };
-    ClusterMetadata meta;
-    meta.topics["foo"] = {.uuid = topic_uuid, .partitions = {0, 1}};
+    auto meta = make_meta_with_topic("foo", topic_uuid, {0, 1});
 
     RequestHeader header{1, 16, 42};
-    FetchRequest req{header, {topic_uuid}};
+    FetchRequest req{
+        header,
+        {{.topic_id = topic_uuid, .partitions = {{.partition_index = 0}, {.partition_index = 1}}}},
+        0};
 
-    auto resp = Broker(std::move(meta)).handle(req);
+    auto resp = Broker(std::move(meta), "").handle(req);
     auto r = std::get_if<FetchResponse>(&resp);
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->correlation_id, 42);
@@ -259,12 +326,13 @@ TEST(BrokerTest, HandlesFetchRequestKnownTopicNoMessages) {
     ASSERT_EQ(r->responses[0].partitions.size(), 2u);
     EXPECT_EQ(r->responses[0].partitions[0].partition_index, 0);
     EXPECT_EQ(r->responses[0].partitions[0].error_code, 0);
+    EXPECT_TRUE(r->responses[0].partitions[0].records.empty());
     EXPECT_EQ(r->responses[0].partitions[1].partition_index, 1);
     EXPECT_EQ(r->responses[0].partitions[1].error_code, 0);
 }
 
 TEST(BrokerTest, HandlesFetchRequestKnownTopicNoPartitions) {
-    constexpr std::array<uint8_t, 16> topic_uuid = {
+    constexpr TopicId topic_uuid = {
         0xa1,
         0xb2,
         0xc3,
@@ -282,13 +350,12 @@ TEST(BrokerTest, HandlesFetchRequestKnownTopicNoPartitions) {
         0xc5,
         0xd6,
     };
-    ClusterMetadata meta;
-    meta.topics["foo"] = {.uuid = topic_uuid, .partitions = {}};
+    auto meta = make_meta_with_topic("foo", topic_uuid, {});
 
     RequestHeader header{1, 16, 42};
-    FetchRequest req{header, {topic_uuid}};
+    FetchRequest req{header, {{.topic_id = topic_uuid, .partitions = {}}}, 0};
 
-    auto resp = Broker(std::move(meta)).handle(req);
+    auto resp = Broker(std::move(meta), "").handle(req);
     auto r = std::get_if<FetchResponse>(&resp);
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->correlation_id, 42);
@@ -298,4 +365,55 @@ TEST(BrokerTest, HandlesFetchRequestKnownTopicNoPartitions) {
     ASSERT_EQ(r->responses.size(), 1u);
     EXPECT_EQ(r->responses[0].topic_id, topic_uuid);
     EXPECT_TRUE(r->responses[0].partitions.empty());
+}
+
+TEST(BrokerTest, HandlesFetchRequestReadsRecordBatchFromDisk) {
+    constexpr TopicId topic_uuid = {
+        0xa1,
+        0xb2,
+        0xc3,
+        0xd4,
+        0xe5,
+        0xf6,
+        0xa7,
+        0xb8,
+        0xc9,
+        0xd0,
+        0xe1,
+        0xf2,
+        0xa3,
+        0xb4,
+        0xc5,
+        0xd6,
+    };
+    std::vector<uint8_t> record_batch = {0x00, 0x01, 0x02, 0x03, 0x04};
+
+    auto tmp_dir = make_tmp_log_dir();
+    auto topic_dir = tmp_dir + "/bar-0";
+    std::filesystem::create_directories(topic_dir);
+
+    {
+        std::ofstream file(topic_dir + "/00000000000000000000.log", std::ios::binary);
+        file.write(reinterpret_cast<const char*>(record_batch.data()),
+                   static_cast<std::streamsize>(record_batch.size()));
+    }
+
+    auto meta = make_meta_with_topic("bar", topic_uuid, {0});
+
+    RequestHeader header{1, 16, 42};
+    FetchRequest req{header, {{.topic_id = topic_uuid, .partitions = {{.partition_index = 0}}}}, 0};
+
+    auto resp = Broker(std::move(meta), tmp_dir).handle(req);
+    auto r = std::get_if<FetchResponse>(&resp);
+    ASSERT_NE(r, nullptr);
+    EXPECT_EQ(r->correlation_id, 42);
+    EXPECT_EQ(r->error_code, 0);
+    ASSERT_EQ(r->responses.size(), 1u);
+    EXPECT_EQ(r->responses[0].topic_id, topic_uuid);
+    ASSERT_EQ(r->responses[0].partitions.size(), 1u);
+    EXPECT_EQ(r->responses[0].partitions[0].partition_index, 0);
+    EXPECT_EQ(r->responses[0].partitions[0].error_code, 0);
+    EXPECT_EQ(r->responses[0].partitions[0].records, record_batch);
+
+    std::filesystem::remove_all(tmp_dir);
 }

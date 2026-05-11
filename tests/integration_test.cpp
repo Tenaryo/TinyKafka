@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <sys/socket.h>
@@ -150,6 +151,123 @@ class ServerProcess {
   private:
     pid_t pid_{};
 };
+
+void push_unsigned_varint(std::vector<uint8_t>& buf, uint32_t val) {
+    while (val > 0x7F) {
+        buf.push_back(static_cast<uint8_t>((val & 0x7F) | 0x80));
+        val >>= 7;
+    }
+    buf.push_back(static_cast<uint8_t>(val & 0x7F));
+}
+
+void push_signed_varint(std::vector<uint8_t>& buf, int32_t val) {
+    uint32_t encoded =
+        static_cast<uint32_t>((static_cast<uint32_t>(val) << 1) ^ static_cast<uint32_t>(val >> 31));
+    while (encoded > 0x7F) {
+        buf.push_back(static_cast<uint8_t>((encoded & 0x7F) | 0x80));
+        encoded >>= 7;
+    }
+    buf.push_back(static_cast<uint8_t>(encoded & 0x7F));
+}
+
+void push_be16(std::vector<uint8_t>& buf, int16_t v) {
+    buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+    buf.push_back(static_cast<uint8_t>(v & 0xFF));
+}
+
+void push_be32(std::vector<uint8_t>& buf, int32_t v) {
+    buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+    buf.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+    buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+    buf.push_back(static_cast<uint8_t>(v & 0xFF));
+}
+
+void push_be64(std::vector<uint8_t>& buf, int64_t v) {
+    for (int i = 7; i >= 0; --i)
+        buf.push_back(static_cast<uint8_t>((v >> (i * 8)) & 0xFF));
+}
+
+auto make_topic_record_value(std::string_view name,
+                             const std::array<uint8_t, 16>& uuid) -> std::vector<uint8_t> {
+    std::vector<uint8_t> v;
+    push_unsigned_varint(v, 1); // frame_version
+    push_unsigned_varint(v, 2); // type = topic
+    push_unsigned_varint(v, 0); // version
+    push_unsigned_varint(v, static_cast<uint32_t>(name.size()) + 1);
+    for (char c : name)
+        v.push_back(static_cast<uint8_t>(c));
+    for (auto b : uuid)
+        v.push_back(b);
+    v.push_back(0x00); // tagged fields
+    return v;
+}
+
+auto make_partition_record_value(int32_t partition_id,
+                                 const std::array<uint8_t, 16>& uuid) -> std::vector<uint8_t> {
+    std::vector<uint8_t> v;
+    push_unsigned_varint(v, 1); // frame_version
+    push_unsigned_varint(v, 3); // type = partition
+    push_unsigned_varint(v, 0); // version
+    push_be32(v, partition_id);
+    for (auto b : uuid)
+        v.push_back(b);
+    push_unsigned_varint(v, 1); // replicas length
+    push_unsigned_varint(v, 1); // isr length
+    push_unsigned_varint(v, 1); // removing replicas
+    push_unsigned_varint(v, 1); // adding replicas
+    push_be32(v, 0);            // leader
+    push_be32(v, 0);            // leader epoch
+    push_be32(v, 0);            // partition epoch
+    push_unsigned_varint(v, 1); // directories length
+    v.push_back(0x00);          // tagged fields
+    return v;
+}
+
+auto make_record(const std::vector<uint8_t>& value) -> std::vector<uint8_t> {
+    std::vector<uint8_t> r;
+    uint32_t body_size = 1 + 1 + 1 + 1 + 0 + 1 + static_cast<uint32_t>(value.size()) + 1;
+    push_signed_varint(r, static_cast<int32_t>(body_size));
+    r.push_back(0x00);         // attributes
+    push_signed_varint(r, 0);  // timestamp_delta
+    push_signed_varint(r, 0);  // offset_delta
+    push_signed_varint(r, -1); // key_len = -1 (null)
+    push_signed_varint(r, static_cast<int32_t>(value.size()));
+    r.insert(r.end(), value.begin(), value.end());
+    push_signed_varint(r, 0); // header_count
+    return r;
+}
+
+auto build_record_batch(const std::vector<std::vector<uint8_t>>& record_values)
+    -> std::vector<uint8_t> {
+    std::vector<uint8_t> buf;
+    push_be64(buf, 0); // baseOffset
+    size_t batch_len_pos = buf.size();
+    push_be32(buf, 0);                                              // batchLength placeholder
+    push_be32(buf, 0);                                              // leaderEpoch
+    buf.push_back(0x02);                                            // magic
+    push_be32(buf, 0);                                              // crc
+    push_be16(buf, 0);                                              // attributes
+    push_be32(buf, static_cast<int32_t>(record_values.size()) - 1); // lastOffsetDelta
+    push_be64(buf, 0);                                              // baseTimestamp
+    push_be64(buf, 0);                                              // maxTimestamp
+    push_be64(buf, 0);                                              // producerId
+    push_be16(buf, 0);                                              // producerEpoch
+    push_be32(buf, 0);                                              // baseSequence
+    push_be32(buf, static_cast<int32_t>(record_values.size()));     // recordCount
+
+    for (const auto& value : record_values) {
+        auto rec = make_record(value);
+        buf.insert(buf.end(), rec.begin(), rec.end());
+    }
+
+    int32_t batch_len = static_cast<int32_t>(buf.size() - batch_len_pos - 4);
+    buf[batch_len_pos] = static_cast<uint8_t>((batch_len >> 24) & 0xFF);
+    buf[batch_len_pos + 1] = static_cast<uint8_t>((batch_len >> 16) & 0xFF);
+    buf[batch_len_pos + 2] = static_cast<uint8_t>((batch_len >> 8) & 0xFF);
+    buf[batch_len_pos + 3] = static_cast<uint8_t>(batch_len & 0xFF);
+
+    return buf;
+}
 
 } // namespace
 
@@ -662,4 +780,195 @@ TEST(IntegrationTest, ServerHandlesFetchRequestEmptyTopics) {
 
     EXPECT_EQ(response[19], 0x01); // responses varint = 1 (0 entries)
     EXPECT_EQ(response[20], 0x00); // body TAG_BUFFER
+}
+
+TEST(IntegrationTest, FetchResponseReturnsRecordBatchFromDisk) {
+    constexpr std::array<uint8_t, 16> kTestUuid = {
+        0xa1,
+        0xb2,
+        0xc3,
+        0xd4,
+        0xe5,
+        0xf6,
+        0xa7,
+        0xb8,
+        0xc9,
+        0xd0,
+        0xe1,
+        0xf2,
+        0xa3,
+        0xb4,
+        0xc5,
+        0xd6,
+    };
+    std::vector<uint8_t> record_batch_data = {
+        0x01,
+        0x02,
+        0x03,
+        0x04,
+        0x05,
+        0x06,
+        0x07,
+        0x08,
+    };
+
+    namespace fs = std::filesystem;
+    const char* root = "/tmp/kraft-combined-logs";
+
+    fs::create_directories(std::string(root) + "/__cluster_metadata-0");
+    {
+        auto topic_val = make_topic_record_value("bar", kTestUuid);
+        auto part_val = make_partition_record_value(0, kTestUuid);
+        auto batch = build_record_batch({topic_val, part_val});
+        std::ofstream f(std::string(root) + "/__cluster_metadata-0/00000000000000000000.log",
+                        std::ios::binary);
+        f.write(reinterpret_cast<const char*>(batch.data()),
+                static_cast<std::streamsize>(batch.size()));
+    }
+
+    fs::create_directories(std::string(root) + "/bar-0");
+    {
+        std::ofstream f(std::string(root) + "/bar-0/00000000000000000000.log", std::ios::binary);
+        f.write(reinterpret_cast<const char*>(record_batch_data.data()),
+                static_cast<std::streamsize>(record_batch_data.size()));
+    }
+
+    ServerProcess server;
+
+    int sock = server.connect_with_retry();
+    ASSERT_GE(sock, 0) << "Failed to connect to server";
+
+    std::vector<uint8_t> request;
+    auto pb16 = [&](int16_t v) {
+        request.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        request.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto pb32 = [&](int32_t v) {
+        request.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+        request.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        request.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        request.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto pb64 = [&](int64_t v) {
+        for (int i = 7; i >= 0; --i)
+            request.push_back(static_cast<uint8_t>((v >> (i * 8)) & 0xFF));
+    };
+
+    request.reserve(128);
+    pb32(0); // message_length placeholder
+    size_t body_start = request.size();
+    pb16(1);                  // api_key = Fetch
+    pb16(16);                 // api_version = 16
+    pb32(kTestCorrelationId); // correlation_id
+    request.push_back(0x00);
+    request.push_back(0x00); // client_id = null
+    request.push_back(0x00); // header TAG_BUFFER
+    pb32(500);               // max_wait_ms
+    pb32(1);                 // min_bytes
+    pb32(0x00100000);        // max_bytes
+    request.push_back(0x00); // isolation_level
+    pb32(0);                 // session_id
+    pb32(0);                 // session_epoch
+    request.push_back(0x02); // topics array: 1 element
+    for (auto b : kTestUuid)
+        request.push_back(b);
+    request.push_back(0x02); // partitions array: 1 element
+    pb32(0);                 // partition_index = 0
+    pb32(-1);                // current_leader_epoch
+    pb64(0);                 // fetch_offset
+    pb32(-1);                // last_fetched_epoch
+    pb64(-1);                // log_start_offset
+    pb32(0x00100000);        // max_bytes
+    request.push_back(0x00); // partition TAG_BUFFER
+    request.push_back(0x00); // topic TAG_BUFFER
+    request.push_back(0x01); // forgotten_topics = empty
+    request.push_back(0x01); // rack_id = empty
+    request.push_back(0x00); // body TAG_BUFFER
+
+    int32_t message_len = static_cast<int32_t>(request.size() - body_start);
+    request[0] = static_cast<uint8_t>((message_len >> 24) & 0xFF);
+    request[1] = static_cast<uint8_t>((message_len >> 16) & 0xFF);
+    request[2] = static_cast<uint8_t>((message_len >> 8) & 0xFF);
+    request[3] = static_cast<uint8_t>(message_len & 0xFF);
+
+    auto sent = send(sock, request.data(), request.size(), 0);
+    ASSERT_GE(sent, 0) << "Failed to send request";
+
+    auto len_prefix = read_exactly<4>(sock);
+    int32_t resp_msg_len = decode_int32_be_response(len_prefix);
+    EXPECT_GT(resp_msg_len, 0) << "Response message length must be positive";
+
+    std::vector<uint8_t> body(resp_msg_len);
+    size_t total = 0;
+    while (total < body.size()) {
+        auto n = read(sock, body.data() + total, body.size() - total);
+        ASSERT_GT(n, 0) << "Failed to read response body";
+        total += static_cast<size_t>(n);
+    }
+    close(sock);
+
+    int32_t echoed_cid = (static_cast<int32_t>(body[0]) << 24) |
+                         (static_cast<int32_t>(body[1]) << 16) |
+                         (static_cast<int32_t>(body[2]) << 8) | static_cast<int32_t>(body[3]);
+    EXPECT_EQ(echoed_cid, kTestCorrelationId) << "Correlation ID mismatch";
+
+    EXPECT_EQ(body[4], 0x00); // header TAG_BUFFER
+
+    int32_t throttle = (static_cast<int32_t>(body[5]) << 24) |
+                       (static_cast<int32_t>(body[6]) << 16) |
+                       (static_cast<int32_t>(body[7]) << 8) | static_cast<int32_t>(body[8]);
+    EXPECT_EQ(throttle, 0);
+
+    int16_t error_code = (static_cast<int16_t>(body[9]) << 8) | static_cast<int16_t>(body[10]);
+    EXPECT_EQ(error_code, 0);
+
+    EXPECT_EQ(body[11], 0x00);
+    EXPECT_EQ(body[12], 0x00);
+    EXPECT_EQ(body[13], 0x00);
+    EXPECT_EQ(body[14], 0x00); // session_id = 0
+
+    size_t off = 15;
+    ASSERT_LT(off, body.size());
+    uint32_t resp_len = static_cast<uint32_t>(body[off++]);
+    ASSERT_GE(resp_len, 2u);
+    EXPECT_EQ(resp_len - 1, 1u) << "Expected 1 topic response";
+
+    for (size_t i = 0; i < 16; ++i) {
+        EXPECT_EQ(body[off + i], kTestUuid[i]);
+    }
+    off += 16;
+
+    ASSERT_LT(off, body.size());
+    uint32_t part_len = static_cast<uint32_t>(body[off++]);
+    ASSERT_GE(part_len, 2u);
+    EXPECT_EQ(part_len - 1, 1u) << "Expected 1 partition response";
+
+    int32_t part_idx =
+        (static_cast<int32_t>(body[off]) << 24) | (static_cast<int32_t>(body[off + 1]) << 16) |
+        (static_cast<int32_t>(body[off + 2]) << 8) | static_cast<int32_t>(body[off + 3]);
+    EXPECT_EQ(part_idx, 0);
+    off += 4;
+
+    int16_t part_err = (static_cast<int16_t>(body[off]) << 8) | static_cast<int16_t>(body[off + 1]);
+    EXPECT_EQ(part_err, 0);
+    off += 2;
+
+    off += 8 + 8 + 8; // high_watermark + last_stable_offset + log_start_offset
+
+    ASSERT_LT(off, body.size());
+    uint32_t aborted_len = static_cast<uint32_t>(body[off++]);
+    EXPECT_EQ(aborted_len, 1u) << "aborted_transactions should be empty";
+
+    off += 4; // preferred_read_replica
+
+    ASSERT_LT(off, body.size());
+    uint32_t records_len = static_cast<uint32_t>(body[off++]);
+    ASSERT_GE(records_len, 1u);
+    size_t num_records = records_len > 0 ? records_len - 1 : 0;
+    EXPECT_EQ(num_records, record_batch_data.size());
+
+    for (size_t i = 0; i < num_records; ++i) {
+        ASSERT_LT(off + i, body.size());
+        EXPECT_EQ(body[off + i], record_batch_data[i]);
+    }
 }

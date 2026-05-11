@@ -159,7 +159,7 @@ TEST(ParserTest, ParsesFetchV16Request) {
     buf.push_back(0x01);
     buf.push_back(0x01);
     buf.push_back(0x01);
-    buf.push_back(0x00);
+    buf.push_back(0x01);
     buf.push_back(0x00);
 
     auto result = parse_request(buf);
@@ -222,17 +222,17 @@ TEST(ParserTest, ParsesFetchV16RequestWithTopicId) {
     buf.push_back(0x02);
     buf.insert(buf.end(), expected_uuid.begin(), expected_uuid.end());
     buf.push_back(0x02);
-    push_be32(0);
-    push_be32(-1);
-    push_be64(0);
-    push_be32(-1);
-    push_be64(-1);
-    push_be32(0x00100000);
-    buf.push_back(0x00);
-    buf.push_back(0x00);
-    buf.push_back(0x01);
-    buf.push_back(0x01);
-    buf.push_back(0x00);
+    push_be32(0);          // partition_index
+    push_be32(-1);         // current_leader_epoch
+    push_be64(0);          // fetch_offset
+    push_be32(-1);         // last_fetched_epoch
+    push_be64(-1);         // log_start_offset
+    push_be32(0x00100000); // max_bytes
+    buf.push_back(0x00);   // part tag
+    buf.push_back(0x00);   // topic tag
+    buf.push_back(0x01);   // forgotten_topics
+    buf.push_back(0x01);   // rack_id
+    buf.push_back(0x00);   // body tag
 
     auto result = parse_request(buf);
     ASSERT_TRUE(result.has_value());
@@ -242,6 +242,85 @@ TEST(ParserTest, ParsesFetchV16RequestWithTopicId) {
     EXPECT_EQ(req->header.api_key, 1);
     EXPECT_EQ(req->header.api_version, 16);
     EXPECT_EQ(req->header.correlation_id, 42);
-    ASSERT_EQ(req->topic_ids.size(), 1u);
-    EXPECT_EQ(req->topic_ids[0], expected_uuid);
+    ASSERT_EQ(req->topics.size(), 1u);
+    EXPECT_EQ(req->topics[0].topic_id, expected_uuid);
+    ASSERT_EQ(req->topics[0].partitions.size(), 1u);
+    EXPECT_EQ(req->topics[0].partitions[0].partition_index, 0);
+}
+
+TEST(ParserTest, ParsesFetchV16WithPartitionIndex) {
+    constexpr std::array<uint8_t, 16> test_uuid = {
+        0x00,
+        0x01,
+        0x02,
+        0x03,
+        0x04,
+        0x05,
+        0x06,
+        0x07,
+        0x08,
+        0x09,
+        0x0a,
+        0x0b,
+        0x0c,
+        0x0d,
+        0x0e,
+        0x0f,
+    };
+    std::vector<std::uint8_t> buf;
+    auto push_be16 = [&](int16_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto push_be32 = [&](int32_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto push_be64 = [&](int64_t v) {
+        for (int i = 7; i >= 0; --i)
+            buf.push_back(static_cast<uint8_t>((v >> (i * 8)) & 0xFF));
+    };
+
+    push_be16(1);   // api_key = Fetch
+    push_be16(16);  // api_version = 16
+    push_be32(123); // correlation_id
+
+    buf.push_back(0x00);
+    buf.push_back(0x00);   // client_id = null
+    buf.push_back(0x00);   // header TAG_BUFFER
+    push_be32(100);        // max_wait_ms
+    push_be32(1);          // min_bytes
+    push_be32(0x00100000); // max_bytes
+    buf.push_back(0x00);   // isolation_level
+    push_be32(0);          // session_id
+    push_be32(0);          // session_epoch
+
+    buf.push_back(0x02);                                       // topics array: 1 element
+    buf.insert(buf.end(), test_uuid.begin(), test_uuid.end()); // topic_id
+    buf.push_back(0x02);                                       // partitions array: 1 element
+    push_be32(3);                                              // partition_index = 3
+    push_be32(-1);                                             // current_leader_epoch
+    push_be64(10);                                             // fetch_offset
+    push_be32(-1);                                             // last_fetched_epoch
+    push_be64(-1);                                             // log_start_offset
+    push_be32(0x00100000);                                     // max_bytes
+    buf.push_back(0x00);                                       // partition TAG_BUFFER
+    buf.push_back(0x00);                                       // topic TAG_BUFFER
+
+    buf.push_back(0x01); // forgotten_topics = empty
+    buf.push_back(0x01); // rack_id = empty
+    buf.push_back(0x00); // body TAG_BUFFER
+
+    auto result = parse_request(buf);
+    ASSERT_TRUE(result.has_value());
+
+    auto req = std::get_if<FetchRequest>(&*result);
+    ASSERT_NE(req, nullptr);
+    EXPECT_EQ(req->header.correlation_id, 123);
+    ASSERT_EQ(req->topics.size(), 1u);
+    EXPECT_EQ(req->topics[0].topic_id, test_uuid);
+    ASSERT_EQ(req->topics[0].partitions.size(), 1u);
+    EXPECT_EQ(req->topics[0].partitions[0].partition_index, 3);
 }

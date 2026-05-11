@@ -171,21 +171,22 @@ TEST(MetadataTest, ParseTopicAndPartitionRecords) {
 
     const auto& meta = *result;
     ASSERT_EQ(meta.topics.size(), 1u);
-    auto it = meta.topics.find("foo");
-    ASSERT_NE(it, meta.topics.end());
-    EXPECT_EQ(it->second.uuid, expected_uuid);
-    ASSERT_EQ(it->second.partitions.size(), 1u);
-    EXPECT_EQ(it->second.partitions[0], 0);
+    EXPECT_EQ(meta.topics[0].name, "foo");
+    EXPECT_EQ(meta.topics[0].uuid, expected_uuid);
+    ASSERT_EQ(meta.topics[0].partitions.size(), 1u);
+    EXPECT_EQ(meta.topics[0].partitions[0], 0);
+
+    auto name_it = meta.name_to_topic.find("foo");
+    ASSERT_NE(name_it, meta.name_to_topic.end());
+    EXPECT_EQ(name_it->second, 0u);
+
+    auto uuid_it = meta.uuid_to_topic.find(expected_uuid);
+    ASSERT_NE(uuid_it, meta.uuid_to_topic.end());
+    EXPECT_EQ(uuid_it->second, 0u);
 }
 
 TEST(MetadataTest, UnknownRecordTypeSkipped) {
-    auto unknown_val = std::vector<uint8_t>{
-        0x01,
-        0x63,
-        0x00, // frame_ver=1, type=99, ver=0 (unsigned varints)
-        0x01,
-        0x00 // dummy data + tagged
-    };
+    auto unknown_val = std::vector<uint8_t>{0x01, 0x63, 0x00, 0x01, 0x00};
     constexpr std::array<uint8_t, 16> uuid = {
         0xa1,
         0xb2,
@@ -211,7 +212,7 @@ TEST(MetadataTest, UnknownRecordTypeSkipped) {
     auto result = parse_cluster_metadata(batch);
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result->topics.size(), 1u);
-    EXPECT_NE(result->topics.find("foo"), result->topics.end());
+    EXPECT_EQ(result->topics[0].name, "foo");
 }
 
 TEST(MetadataTest, EmptyInputReturnsEmptyMetadata) {
@@ -219,4 +220,78 @@ TEST(MetadataTest, EmptyInputReturnsEmptyMetadata) {
     auto result = parse_cluster_metadata(empty);
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(result->topics.empty());
+    EXPECT_TRUE(result->name_to_topic.empty());
+    EXPECT_TRUE(result->uuid_to_topic.empty());
+}
+
+TEST(MetadataTest, UuidToNameLookupRoundTrip) {
+    constexpr std::array<uint8_t, 16> uuid_a = {
+        0x01,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+    };
+    constexpr std::array<uint8_t, 16> uuid_b = {
+        0x02,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+    };
+
+    auto topic_a = make_topic_record_value("alpha", uuid_a);
+    auto topic_b = make_topic_record_value("beta", uuid_b);
+    auto part_a = make_partition_record_value(0, uuid_a);
+    auto part_b = make_partition_record_value(0, uuid_b);
+
+    auto batch = build_record_batch({topic_a, topic_b, part_a, part_b});
+
+    auto result = parse_cluster_metadata(batch);
+    ASSERT_TRUE(result.has_value());
+    const auto& meta = *result;
+
+    ASSERT_EQ(meta.topics.size(), 2u);
+    ASSERT_EQ(meta.name_to_topic.size(), 2u);
+    ASSERT_EQ(meta.uuid_to_topic.size(), 2u);
+
+    auto a_by_name = meta.name_to_topic.find("alpha");
+    ASSERT_NE(a_by_name, meta.name_to_topic.end());
+    EXPECT_EQ(meta.topics[a_by_name->second].name, "alpha");
+    EXPECT_EQ(meta.topics[a_by_name->second].uuid, uuid_a);
+
+    auto a_by_uuid = meta.uuid_to_topic.find(uuid_a);
+    ASSERT_NE(a_by_uuid, meta.uuid_to_topic.end());
+    EXPECT_EQ(a_by_uuid->second, a_by_name->second);
+
+    auto b_by_name = meta.name_to_topic.find("beta");
+    ASSERT_NE(b_by_name, meta.name_to_topic.end());
+
+    auto b_by_uuid = meta.uuid_to_topic.find(uuid_b);
+    ASSERT_NE(b_by_uuid, meta.uuid_to_topic.end());
+    EXPECT_EQ(b_by_uuid->second, b_by_name->second);
+
+    EXPECT_NE(a_by_name->second, b_by_name->second);
 }

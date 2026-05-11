@@ -416,6 +416,7 @@ TEST(SerializerTest, SerializesFetchResponseUnknownTopic) {
                             FetchPartitionResponse{
                                 .partition_index = 0,
                                 .error_code = 100,
+                                .records = {},
                             },
                         },
                 },
@@ -459,4 +460,100 @@ TEST(SerializerTest, SerializesFetchResponseUnknownTopic) {
     EXPECT_EQ(bytes[73], 0x00); // partition TAG_BUFFER
     EXPECT_EQ(bytes[74], 0x00); // topic TAG_BUFFER
     EXPECT_EQ(bytes[75], 0x00); // body TAG_BUFFER
+}
+
+TEST(SerializerTest, SerializesFetchResponseWithRecords) {
+    constexpr std::array<uint8_t, 16> topic_uuid = {
+        0x01,
+        0x02,
+        0x03,
+        0x04,
+        0x05,
+        0x06,
+        0x07,
+        0x08,
+        0x09,
+        0x0a,
+        0x0b,
+        0x0c,
+        0x0d,
+        0x0e,
+        0x0f,
+        0x10,
+    };
+    std::vector<uint8_t> records_data = {0xAB, 0xCD};
+    FetchResponse resp{
+        .correlation_id = 42,
+        .throttle_time_ms = 0,
+        .error_code = 0,
+        .session_id = 0,
+        .responses =
+            {
+                FetchTopicResponse{
+                    .topic_id = topic_uuid,
+                    .partitions =
+                        {
+                            FetchPartitionResponse{
+                                .partition_index = 0,
+                                .error_code = 0,
+                                .records = records_data,
+                            },
+                        },
+                },
+            },
+    };
+    auto bytes = serialize(resp);
+
+    // body_size = 4+1+4+2+4 + 1+16+1 + 35+varint(3)+2+1 + 1+1 = 74
+    // total = 4+74 = 78
+    ASSERT_EQ(bytes.size(), 78);
+    EXPECT_EQ(bytes[0], 0x00);
+    EXPECT_EQ(bytes[1], 0x00);
+    EXPECT_EQ(bytes[2], 0x00);
+    EXPECT_EQ(bytes[3], 0x4A); // message_size = 74
+
+    EXPECT_EQ(bytes[4], 0x00);
+    EXPECT_EQ(bytes[5], 0x00);
+    EXPECT_EQ(bytes[6], 0x00);
+    EXPECT_EQ(bytes[7], 0x2A); // correlation_id = 42
+    EXPECT_EQ(bytes[8], 0x00); // header TAG_BUFFER
+
+    EXPECT_EQ(bytes[9], 0x00);
+    EXPECT_EQ(bytes[10], 0x00);
+    EXPECT_EQ(bytes[11], 0x00);
+    EXPECT_EQ(bytes[12], 0x00); // throttle_time_ms = 0
+
+    EXPECT_EQ(bytes[13], 0x00);
+    EXPECT_EQ(bytes[14], 0x00); // error_code = 0
+
+    EXPECT_EQ(bytes[15], 0x00);
+    EXPECT_EQ(bytes[16], 0x00);
+    EXPECT_EQ(bytes[17], 0x00);
+    EXPECT_EQ(bytes[18], 0x00); // session_id = 0
+
+    EXPECT_EQ(bytes[19], 0x02); // responses varint = 2 (1 element)
+
+    for (size_t i = 0; i < 16; ++i) {
+        EXPECT_EQ(bytes[20 + i], topic_uuid[i]);
+    }
+
+    EXPECT_EQ(bytes[36], 0x02); // partitions varint = 2 (1 element)
+
+    EXPECT_EQ(bytes[37], 0x00);
+    EXPECT_EQ(bytes[38], 0x00);
+    EXPECT_EQ(bytes[39], 0x00);
+    EXPECT_EQ(bytes[40], 0x00); // partition_index = 0
+
+    EXPECT_EQ(bytes[41], 0x00);
+    EXPECT_EQ(bytes[42], 0x00); // error_code = 0
+
+    EXPECT_EQ(bytes[67], 0x01); // aborted_transactions varint (empty)
+
+    EXPECT_EQ(bytes[72], 0x03); // records varint = 3 (2 bytes)
+    EXPECT_EQ(bytes[73], 0xAB); // records data[0]
+    EXPECT_EQ(bytes[74], 0xCD); // records data[1]
+
+    EXPECT_EQ(bytes[75], 0x00); // partition TAG_BUFFER
+    EXPECT_EQ(bytes[76], 0x00); // topic TAG_BUFFER
+    EXPECT_EQ(bytes[77], 0x00); // body TAG_BUFFER
 }
