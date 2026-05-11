@@ -431,3 +431,22 @@ TEST(BrokerTest, HandlesFetchRequestReadsRecordBatchFromDisk) {
 
     std::filesystem::remove_all(tmp_dir);
 }
+
+TEST(BrokerTest, HandlesProduceRequestUnknownTopicOrPartition) {
+    RequestHeader header{0, 11, 42};
+    ProduceRequest req{header, {{.topic_name = "foo", .partitions = {{.partition_index = 0}}}}};
+
+    auto resp = Broker(ClusterMetadata{}, "").handle(req);
+    auto r = std::get_if<ProduceResponse>(&resp);
+    ASSERT_NE(r, nullptr);
+    EXPECT_EQ(r->correlation_id, 42);
+    EXPECT_EQ(r->throttle_time_ms, 0);
+    ASSERT_EQ(r->responses.size(), 1u);
+    EXPECT_EQ(r->responses[0].topic_name, "foo");
+    ASSERT_EQ(r->responses[0].partitions.size(), 1u);
+    EXPECT_EQ(r->responses[0].partitions[0].partition_index, 0);
+    EXPECT_EQ(r->responses[0].partitions[0].error_code, 3);
+    EXPECT_EQ(r->responses[0].partitions[0].base_offset, -1);
+    EXPECT_EQ(r->responses[0].partitions[0].log_append_time_ms, -1);
+    EXPECT_EQ(r->responses[0].partitions[0].log_start_offset, -1);
+}

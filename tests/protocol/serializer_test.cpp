@@ -557,3 +557,82 @@ TEST(SerializerTest, SerializesFetchResponseWithRecords) {
     EXPECT_EQ(bytes[76], 0x00); // topic TAG_BUFFER
     EXPECT_EQ(bytes[77], 0x00); // body TAG_BUFFER
 }
+
+TEST(SerializerTest, SerializesProduceResponseUnknownTopic) {
+    ProduceResponse resp{
+        .correlation_id = 42,
+        .throttle_time_ms = 0,
+        .responses =
+            {
+                ProduceTopicResponse{
+                    .topic_name = "foo",
+                    .partitions =
+                        {
+                            ProducePartitionResponse{
+                                .partition_index = 0,
+                                .error_code = 3,
+                                .base_offset = -1,
+                                .log_append_time_ms = -1,
+                                .log_start_offset = -1,
+                            },
+                        },
+                },
+            },
+    };
+    auto bytes = serialize(resp);
+
+    ASSERT_EQ(bytes.size(), 54);
+    EXPECT_EQ(bytes[0], 0x00);
+    EXPECT_EQ(bytes[1], 0x00);
+    EXPECT_EQ(bytes[2], 0x00);
+    EXPECT_EQ(bytes[3], 0x32); // message_size = 50
+
+    EXPECT_EQ(bytes[4], 0x00);
+    EXPECT_EQ(bytes[5], 0x00);
+    EXPECT_EQ(bytes[6], 0x00);
+    EXPECT_EQ(bytes[7], 0x2A); // correlation_id = 42
+
+    EXPECT_EQ(bytes[8], 0x00); // header TAG_BUFFER
+
+    EXPECT_EQ(bytes[9], 0x02); // responses varint = 2 (1 element)
+
+    EXPECT_EQ(bytes[10], 0x04); // name varint = 4 (len=3)
+    EXPECT_EQ(bytes[11], 'f');
+    EXPECT_EQ(bytes[12], 'o');
+    EXPECT_EQ(bytes[13], 'o');
+
+    EXPECT_EQ(bytes[14], 0x02); // partitions varint = 2 (1 element)
+
+    EXPECT_EQ(bytes[15], 0x00);
+    EXPECT_EQ(bytes[16], 0x00);
+    EXPECT_EQ(bytes[17], 0x00);
+    EXPECT_EQ(bytes[18], 0x00); // partition_index = 0
+
+    EXPECT_EQ(bytes[19], 0x00);
+    EXPECT_EQ(bytes[20], 0x03); // error_code = 3
+
+    // base_offset = -1 (8 bytes of 0xFF)
+    for (size_t i = 21; i < 29; ++i)
+        EXPECT_EQ(bytes[i], 0xFF);
+
+    // log_append_time_ms = -1 (8 bytes of 0xFF)
+    for (size_t i = 29; i < 37; ++i)
+        EXPECT_EQ(bytes[i], 0xFF);
+
+    // log_start_offset = -1 (8 bytes of 0xFF)
+    for (size_t i = 37; i < 45; ++i)
+        EXPECT_EQ(bytes[i], 0xFF);
+
+    EXPECT_EQ(bytes[45], 0x01); // record_errors = empty (varint 1)
+    EXPECT_EQ(bytes[46], 0x00); // error_message = null (varint 0)
+    EXPECT_EQ(bytes[47], 0x00); // partition tagged_fields
+
+    EXPECT_EQ(bytes[48], 0x00); // topic tagged_fields
+
+    EXPECT_EQ(bytes[49], 0x00);
+    EXPECT_EQ(bytes[50], 0x00);
+    EXPECT_EQ(bytes[51], 0x00);
+    EXPECT_EQ(bytes[52], 0x00); // throttle_time_ms = 0
+
+    EXPECT_EQ(bytes[53], 0x00); // body tagged_fields
+}

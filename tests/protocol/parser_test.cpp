@@ -324,3 +324,60 @@ TEST(ParserTest, ParsesFetchV16WithPartitionIndex) {
     ASSERT_EQ(req->topics[0].partitions.size(), 1u);
     EXPECT_EQ(req->topics[0].partitions[0].partition_index, 3);
 }
+
+TEST(ParserTest, ParsesProduceV11Request) {
+    std::vector<std::uint8_t> buf;
+    auto push_be16 = [&](int16_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto push_be32 = [&](int32_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+
+    push_be16(0);  // api_key = Produce
+    push_be16(11); // api_version = 11
+    push_be32(42); // correlation_id
+
+    push_be16(0);        // client_id = null (INT16)
+    buf.push_back(0x00); // header TAG_BUFFER
+
+    buf.push_back(0x00); // transactional_id = null
+
+    push_be16(1);    // acks = 1
+    push_be32(5000); // timeout_ms = 5000
+
+    buf.push_back(0x02); // topics array: 1 element
+
+    buf.push_back(0x04); // topic name length = 3
+    buf.push_back('f');
+    buf.push_back('o');
+    buf.push_back('o');
+    buf.push_back(0x00); // topic TAG_BUFFER
+
+    buf.push_back(0x02); // partitions array: 1 element
+    push_be32(0);        // partition_index = 0
+    buf.push_back(0x00); // partition TAG_BUFFER
+    buf.push_back(0x01); // records: empty compact bytes
+    buf.push_back(0x00); // partition TAG_BUFFER (records trailing)
+
+    buf.push_back(0x00); // topic TAG_BUFFER
+
+    buf.push_back(0x00); // body TAG_BUFFER
+
+    auto result = parse_request(buf);
+    ASSERT_TRUE(result.has_value());
+
+    auto req = std::get_if<ProduceRequest>(&*result);
+    ASSERT_NE(req, nullptr);
+    EXPECT_EQ(req->header.api_key, 0);
+    EXPECT_EQ(req->header.api_version, 11);
+    EXPECT_EQ(req->header.correlation_id, 42);
+    ASSERT_EQ(req->topics.size(), 1u);
+    EXPECT_EQ(req->topics[0].topic_name, "foo");
+    ASSERT_EQ(req->topics[0].partitions.size(), 1u);
+    EXPECT_EQ(req->topics[0].partitions[0].partition_index, 0);
+}
