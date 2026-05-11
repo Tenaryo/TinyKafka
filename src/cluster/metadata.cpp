@@ -194,14 +194,14 @@ auto parse_cluster_metadata(std::span<const uint8_t> data) noexcept
 
     ClusterMetadata meta;
     for (auto& tr : topic_records) {
-        meta.topics[std::move(tr.name)] = {.uuid = tr.uuid, .partitions = {}};
+        meta.name_to_topic[tr.name] = meta.topics.size();
+        meta.uuid_to_topic[tr.uuid] = meta.topics.size();
+        meta.topics.push_back({.name = std::move(tr.name), .uuid = tr.uuid, .partitions = {}});
     }
     for (auto& pr : partition_records) {
-        for (auto& [name, info] : meta.topics) {
-            if (info.uuid == pr.uuid) {
-                info.partitions.push_back(pr.partition_id);
-                break;
-            }
+        auto it = meta.uuid_to_topic.find(pr.uuid);
+        if (it != meta.uuid_to_topic.end()) {
+            meta.topics[it->second].partitions.push_back(pr.partition_id);
         }
     }
 

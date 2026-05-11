@@ -1,12 +1,15 @@
 #pragma once
 
+#include <string>
+
 #include "cluster/metadata.hpp"
 #include "protocol/request.hpp"
 #include "protocol/response.hpp"
 
 class Broker {
   public:
-    explicit Broker(ClusterMetadata metadata = {}) : metadata_(std::move(metadata)) {}
+    explicit Broker(ClusterMetadata metadata = {}, std::string log_root = {})
+        : metadata_(std::move(metadata)), log_root_(std::move(log_root)) {}
 
     auto handle(const Request& req) -> Response;
   private:
@@ -15,4 +18,5 @@ class Broker {
         -> const ClusterMetadata::TopicInfo*;
 
     ClusterMetadata metadata_;
+    std::string log_root_;
 };

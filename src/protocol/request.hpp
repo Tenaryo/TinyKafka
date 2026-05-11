@@ -21,9 +21,19 @@ struct DescribeTopicPartitionsRequest {
     std::vector<std::string> topic_names;
 };
 
+struct FetchPartitionRequest {
+    int32_t partition_index = 0;
+};
+
+struct FetchTopicRequest {
+    std::array<uint8_t, 16> topic_id{};
+    std::vector<FetchPartitionRequest> partitions;
+};
+
 struct FetchRequest {
     RequestHeader header;
-    std::vector<std::array<uint8_t, 16>> topic_ids;
+    std::vector<FetchTopicRequest> topics;
+    int32_t max_bytes = 0;
 };
 
 using Request = std::variant<ApiVersionsRequest, DescribeTopicPartitionsRequest, FetchRequest>;

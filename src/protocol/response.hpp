@@ -49,6 +49,7 @@ struct DescribeTopicPartitionsResponse {
 struct FetchPartitionResponse {
     int32_t partition_index = 0;
     int16_t error_code = 0;
+    std::vector<uint8_t> records;
 };
 
 struct FetchTopicResponse {

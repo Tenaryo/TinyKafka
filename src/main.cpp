@@ -16,6 +16,8 @@ int main() {
     std::cout << std::unitbuf;
     std::cerr << std::unitbuf;
 
+    constexpr std::string_view kLogRoot = "/tmp/kraft-combined-logs";
+
     auto metadata = parse_cluster_metadata_file(
         "/tmp/kraft-combined-logs/__cluster_metadata-0/00000000000000000000.log");
 
@@ -36,8 +38,8 @@ int main() {
 
         int client_fd = *client;
 
-        std::thread([client_fd, &metadata] {
-            Broker broker(metadata);
+        std::thread([client_fd, &metadata, kLogRoot] {
+            Broker broker(metadata, std::string(kLogRoot));
             std::vector<std::uint8_t> buf;
 
             while (true) {

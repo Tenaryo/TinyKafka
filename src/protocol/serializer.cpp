@@ -49,11 +49,11 @@ auto serialize(const Response& resp) -> std::vector<std::uint8_t> {
                     writer.write_int16(entry.api_key);
                     writer.write_int16(entry.min_version);
                     writer.write_int16(entry.max_version);
-                    writer.write_int8(0x00);
+                    writer.write_int8(0x00); // TAG_BUFFER
                 }
 
                 writer.write_int32(r.throttle_time_ms);
-                writer.write_int8(0x00);
+                writer.write_int8(0x00); // body TAG_BUFFER
 
                 return buf;
             },
@@ -80,7 +80,7 @@ auto serialize(const Response& resp) -> std::vector<std::uint8_t> {
 
                 writer.write_int32(static_cast<int32_t>(body_size));
                 writer.write_int32(r.correlation_id);
-                writer.write_int8(0x00);
+                writer.write_int8(0x00); // header TAG_BUFFER
                 writer.write_int32(r.throttle_time_ms);
 
                 uint32_t topic_count = static_cast<uint32_t>(r.topics.size()) + 1;
@@ -93,7 +93,7 @@ auto serialize(const Response& resp) -> std::vector<std::uint8_t> {
                     writer.write_int8(t.is_internal ? 1 : 0);
 
                     if (t.partitions.empty()) {
-                        writer.write_int8(0x01);
+                        writer.write_int8(0x01); // compact array, empty
                     } else {
                         writer.write_varint(static_cast<uint32_t>(t.partitions.size()) + 1);
                         for (const auto& p : t.partitions) {
@@ -106,16 +106,16 @@ auto serialize(const Response& resp) -> std::vector<std::uint8_t> {
                             write_compact_int32_array(writer, p.eligible_leader_replicas);
                             write_compact_int32_array(writer, p.last_known_elr);
                             write_compact_int32_array(writer, p.offline_replicas);
-                            writer.write_int8(0x00);
+                            writer.write_int8(0x00); // partition TAG_BUFFER
                         }
                     }
 
                     writer.write_int32(t.authorized_operations);
-                    writer.write_int8(0x00);
+                    writer.write_int8(0x00); // topic TAG_BUFFER
                 }
 
-                writer.write_int8(0xFF);
-                writer.write_int8(0x00);
+                writer.write_int8(0xFF); // next_cursor = null
+                writer.write_int8(0x00); // body TAG_BUFFER
 
                 return buf;
             },
@@ -126,17 +126,25 @@ auto serialize(const Response& resp) -> std::vector<std::uint8_t> {
                     body_size += 16;
                     body_size +=
                         varint_encoded_size(static_cast<uint32_t>(t.partitions.size()) + 1);
-                    body_size += t.partitions.size() * 37;
-                    body_size += 1;
+                    for (const auto& p : t.partitions) {
+                        // partition_index(4) + error_code(2) + hw(8) + lso(8) + lso(8)
+                        // + aborted varint(1) + preferred_replica(4) + records + tag(1)
+                        body_size += 35;
+                        body_size +=
+                            varint_encoded_size(static_cast<uint32_t>(p.records.size()) + 1);
+                        body_size += p.records.size();
+                        body_size += 1; // partition TAG_BUFFER
+                    }
+                    body_size += 1; // topic TAG_BUFFER
                 }
-                body_size += 1;
+                body_size += 1; // body TAG_BUFFER
 
                 std::vector<uint8_t> buf(4 + body_size);
                 ByteWriter writer(buf);
 
                 writer.write_int32(static_cast<int32_t>(body_size));
                 writer.write_int32(r.correlation_id);
-                writer.write_int8(0x00);
+                writer.write_int8(0x00); // header TAG_BUFFER
                 writer.write_int32(r.throttle_time_ms);
                 writer.write_int16(r.error_code);
                 writer.write_int32(r.session_id);
@@ -148,18 +156,22 @@ auto serialize(const Response& resp) -> std::vector<std::uint8_t> {
                     for (const auto& p : t.partitions) {
                         writer.write_int32(p.partition_index);
                         writer.write_int16(p.error_code);
-                        writer.write_int64(0);
-                        writer.write_int64(0);
-                        writer.write_int64(0);
-                        writer.write_varint(1);
-                        writer.write_int32(0);
-                        writer.write_varint(1);
-                        writer.write_int8(0x00);
+                        writer.write_int64(0);  // high_watermark
+                        writer.write_int64(0);  // last_stable_offset
+                        writer.write_int64(0);  // log_start_offset
+                        writer.write_varint(1); // aborted_transactions: empty
+                        writer.write_int32(0);  // preferred_read_replica
+                        // records: compact bytes (length+1 as varint)
+                        writer.write_varint(static_cast<uint32_t>(p.records.size()) + 1);
+                        if (!p.records.empty()) {
+                            writer.write_bytes(p.records);
+                        }
+                        writer.write_int8(0x00); // partition TAG_BUFFER
                     }
-                    writer.write_int8(0x00);
+                    writer.write_int8(0x00); // topic TAG_BUFFER
                 }
 
-                writer.write_int8(0x00);
+                writer.write_int8(0x00); // body TAG_BUFFER
                 return buf;
             },
         },
