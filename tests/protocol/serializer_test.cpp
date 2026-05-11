@@ -382,3 +382,81 @@ TEST(SerializerTest, SerializesFetchApiEntry) {
     EXPECT_EQ(bytes[16], 0x10); // max_version = 16
     EXPECT_EQ(bytes[17], 0x00); // TAG_BUFFER (entry)
 }
+
+TEST(SerializerTest, SerializesFetchResponseUnknownTopic) {
+    constexpr std::array<uint8_t, 16> topic_uuid = {
+        0xa1,
+        0xb2,
+        0xc3,
+        0xd4,
+        0xe5,
+        0xf6,
+        0xa7,
+        0xb8,
+        0xc9,
+        0xd0,
+        0xe1,
+        0xf2,
+        0xa3,
+        0xb4,
+        0xc5,
+        0xd6,
+    };
+    FetchResponse resp{
+        .correlation_id = 42,
+        .throttle_time_ms = 0,
+        .error_code = 0,
+        .session_id = 0,
+        .responses =
+            {
+                FetchTopicResponse{
+                    .topic_id = topic_uuid,
+                    .partitions =
+                        {
+                            FetchPartitionResponse{
+                                .partition_index = 0,
+                                .error_code = 100,
+                            },
+                        },
+                },
+            },
+    };
+    auto bytes = serialize(resp);
+
+    ASSERT_EQ(bytes.size(), 76);
+    EXPECT_EQ(bytes[0], 0x00);
+    EXPECT_EQ(bytes[1], 0x00);
+    EXPECT_EQ(bytes[2], 0x00);
+    EXPECT_EQ(bytes[3], 0x48); // message_size = 72
+    EXPECT_EQ(bytes[4], 0x00);
+    EXPECT_EQ(bytes[5], 0x00);
+    EXPECT_EQ(bytes[6], 0x00);
+    EXPECT_EQ(bytes[7], 0x2A); // correlation_id = 42
+    EXPECT_EQ(bytes[8], 0x00); // header TAG_BUFFER
+    EXPECT_EQ(bytes[9], 0x00);
+    EXPECT_EQ(bytes[10], 0x00);
+    EXPECT_EQ(bytes[11], 0x00);
+    EXPECT_EQ(bytes[12], 0x00); // throttle_time_ms = 0
+    EXPECT_EQ(bytes[13], 0x00);
+    EXPECT_EQ(bytes[14], 0x00); // error_code = 0
+    EXPECT_EQ(bytes[15], 0x00);
+    EXPECT_EQ(bytes[16], 0x00);
+    EXPECT_EQ(bytes[17], 0x00);
+    EXPECT_EQ(bytes[18], 0x00); // session_id = 0
+    EXPECT_EQ(bytes[19], 0x02); // responses varint = 2 (1 element)
+    for (size_t i = 0; i < 16; ++i) {
+        EXPECT_EQ(bytes[20 + i], topic_uuid[i]);
+    }
+    EXPECT_EQ(bytes[36], 0x02); // partitions varint = 2 (1 element)
+    EXPECT_EQ(bytes[37], 0x00);
+    EXPECT_EQ(bytes[38], 0x00);
+    EXPECT_EQ(bytes[39], 0x00);
+    EXPECT_EQ(bytes[40], 0x00); // partition_index = 0
+    EXPECT_EQ(bytes[41], 0x00);
+    EXPECT_EQ(bytes[42], 0x64); // error_code = 100
+    EXPECT_EQ(bytes[67], 0x01); // aborted_transactions varint (empty)
+    EXPECT_EQ(bytes[72], 0x01); // records varint (empty)
+    EXPECT_EQ(bytes[73], 0x00); // partition TAG_BUFFER
+    EXPECT_EQ(bytes[74], 0x00); // topic TAG_BUFFER
+    EXPECT_EQ(bytes[75], 0x00); // body TAG_BUFFER
+}

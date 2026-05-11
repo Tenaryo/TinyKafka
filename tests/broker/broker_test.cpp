@@ -174,7 +174,7 @@ TEST(BrokerTest, ReturnsFetchApiEntryWithMaxVersion16) {
 
 TEST(BrokerTest, HandlesFetchRequestEmptyTopics) {
     RequestHeader header{1, 16, 42};
-    FetchRequest req{header};
+    FetchRequest req{header, {}};
 
     auto resp = Broker(ClusterMetadata{}).handle(req);
     auto r = std::get_if<FetchResponse>(&resp);
@@ -184,4 +184,40 @@ TEST(BrokerTest, HandlesFetchRequestEmptyTopics) {
     EXPECT_EQ(r->error_code, 0);
     EXPECT_EQ(r->session_id, 0);
     EXPECT_TRUE(r->responses.empty());
+}
+
+TEST(BrokerTest, HandlesFetchRequestUnknownTopic) {
+    constexpr std::array<uint8_t, 16> topic_uuid = {
+        0xa1,
+        0xb2,
+        0xc3,
+        0xd4,
+        0xe5,
+        0xf6,
+        0xa7,
+        0xb8,
+        0xc9,
+        0xd0,
+        0xe1,
+        0xf2,
+        0xa3,
+        0xb4,
+        0xc5,
+        0xd6,
+    };
+    RequestHeader header{1, 16, 42};
+    FetchRequest req{header, {topic_uuid}};
+
+    auto resp = Broker(ClusterMetadata{}).handle(req);
+    auto r = std::get_if<FetchResponse>(&resp);
+    ASSERT_NE(r, nullptr);
+    EXPECT_EQ(r->correlation_id, 42);
+    EXPECT_EQ(r->throttle_time_ms, 0);
+    EXPECT_EQ(r->error_code, 0);
+    EXPECT_EQ(r->session_id, 0);
+    ASSERT_EQ(r->responses.size(), 1u);
+    EXPECT_EQ(r->responses[0].topic_id, topic_uuid);
+    ASSERT_EQ(r->responses[0].partitions.size(), 1u);
+    EXPECT_EQ(r->responses[0].partitions[0].partition_index, 0);
+    EXPECT_EQ(r->responses[0].partitions[0].error_code, 100);
 }
