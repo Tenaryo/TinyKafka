@@ -160,6 +160,7 @@ TEST(ParserTest, ParsesFetchV16Request) {
     buf.push_back(0x01);
     buf.push_back(0x01);
     buf.push_back(0x00);
+    buf.push_back(0x00);
 
     auto result = parse_request(buf);
     ASSERT_TRUE(result.has_value());
@@ -209,6 +210,7 @@ TEST(ParserTest, ParsesFetchV16RequestWithTopicId) {
     push_be16(1);
     push_be16(16);
     push_be32(42);
+    buf.push_back(0x00);
     buf.push_back(0x00);
     buf.push_back(0x00);
     push_be32(500);

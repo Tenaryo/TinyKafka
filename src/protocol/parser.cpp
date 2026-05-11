@@ -1,7 +1,6 @@
 #include "protocol/parser.hpp"
 
 #include <cstring>
-#include <iostream>
 
 #include "util/byte_reader.hpp"
 #include "util/endian.hpp"
@@ -80,123 +79,87 @@ auto parse_request(std::span<const std::uint8_t> buf) -> std::expected<Request, 
             RequestHeader{*api_key, *api_version, *correlation_id}, std::move(topic_names)};
     }
     case 1: {
-        auto client_id_len = reader.read_varint();
-        if (!client_id_len) {
-            std::cerr << "DEBUG parse step 1\n";
+        auto client_id_len = reader.read_int16();
+        if (!client_id_len)
             return std::unexpected(client_id_len.error());
-        }
         if (*client_id_len > 0) {
-            auto skip_client = reader.skip(static_cast<size_t>(*client_id_len - 1));
-            if (!skip_client) {
-                std::cerr << "DEBUG parse step 2\n";
+            auto skip_client = reader.skip(static_cast<size_t>(*client_id_len));
+            if (!skip_client)
                 return std::unexpected(skip_client.error());
-            }
         }
         auto header_tag = reader.skip(1);
-        if (!header_tag) {
-            std::cerr << "DEBUG parse step 3\n";
+        if (!header_tag)
             return std::unexpected(header_tag.error());
-        }
 
         auto skip_fetch_cfg = reader.skip(4 + 4 + 4 + 1 + 4 + 4);
-        if (!skip_fetch_cfg) {
-            std::cerr << "DEBUG parse step 4\n";
+        if (!skip_fetch_cfg)
             return std::unexpected(skip_fetch_cfg.error());
-        }
 
         auto topic_array_len = reader.read_varint();
-        if (!topic_array_len) {
-            std::cerr << "DEBUG parse step 5\n";
+        if (!topic_array_len)
             return std::unexpected(topic_array_len.error());
-        }
         uint32_t topic_count = *topic_array_len > 0 ? *topic_array_len - 1 : 0;
 
         std::vector<std::array<uint8_t, 16>> topic_ids;
         topic_ids.reserve(topic_count);
         for (uint32_t ti = 0; ti < topic_count; ++ti) {
             auto tid_bytes = reader.read_bytes(16);
-            if (!tid_bytes) {
-                std::cerr << "DEBUG parse step 6\n";
+            if (!tid_bytes)
                 return std::unexpected(tid_bytes.error());
-            }
             std::array<uint8_t, 16> tid{};
             std::memcpy(tid.data(), tid_bytes->data(), 16);
             topic_ids.push_back(tid);
 
             auto part_array_len = reader.read_varint();
-            if (!part_array_len) {
-                std::cerr << "DEBUG parse step 7\n";
+            if (!part_array_len)
                 return std::unexpected(part_array_len.error());
-            }
             uint32_t part_count = *part_array_len > 0 ? *part_array_len - 1 : 0;
             for (uint32_t pi = 0; pi < part_count; ++pi) {
                 auto skip_part = reader.skip(4 + 4 + 8 + 4 + 8 + 4);
-                if (!skip_part) {
-                    std::cerr << "DEBUG parse step 8\n";
+                if (!skip_part)
                     return std::unexpected(skip_part.error());
-                }
                 auto skip_part_tag = reader.skip(1);
-                if (!skip_part_tag) {
-                    std::cerr << "DEBUG parse step 9\n";
+                if (!skip_part_tag)
                     return std::unexpected(skip_part_tag.error());
-                }
             }
 
             auto skip_topic_tag = reader.skip(1);
-            if (!skip_topic_tag) {
-                std::cerr << "DEBUG parse step 10\n";
+            if (!skip_topic_tag)
                 return std::unexpected(skip_topic_tag.error());
-            }
         }
 
         auto forgotten_len = reader.read_varint();
-        if (!forgotten_len) {
-            std::cerr << "DEBUG parse step 11\n";
+        if (!forgotten_len)
             return std::unexpected(forgotten_len.error());
-        }
         uint32_t forgotten_count = *forgotten_len > 0 ? *forgotten_len - 1 : 0;
         for (uint32_t fi = 0; fi < forgotten_count; ++fi) {
             auto skip_ftid = reader.skip(16);
-            if (!skip_ftid) {
-                std::cerr << "DEBUG parse step 12\n";
+            if (!skip_ftid)
                 return std::unexpected(skip_ftid.error());
-            }
             auto fpart_len = reader.read_varint();
-            if (!fpart_len) {
-                std::cerr << "DEBUG parse step 13\n";
+            if (!fpart_len)
                 return std::unexpected(fpart_len.error());
-            }
             uint32_t fpart_count = *fpart_len > 0 ? *fpart_len - 1 : 0;
             auto skip_fparts = reader.skip(fpart_count * 4);
-            if (!skip_fparts) {
-                std::cerr << "DEBUG parse step 14\n";
+            if (!skip_fparts)
                 return std::unexpected(skip_fparts.error());
-            }
             auto skip_ftag = reader.skip(1);
-            if (!skip_ftag) {
-                std::cerr << "DEBUG parse step 15\n";
+            if (!skip_ftag)
                 return std::unexpected(skip_ftag.error());
-            }
         }
 
         auto rack_id_len = reader.read_varint();
-        if (!rack_id_len) {
-            std::cerr << "DEBUG parse step 16\n";
+        if (!rack_id_len)
             return std::unexpected(rack_id_len.error());
-        }
         if (*rack_id_len > 1) {
             auto skip_rack = reader.skip(static_cast<size_t>(*rack_id_len - 1));
-            if (!skip_rack) {
-                std::cerr << "DEBUG parse step 17\n";
+            if (!skip_rack)
                 return std::unexpected(skip_rack.error());
-            }
         }
 
         auto body_tag = reader.skip(1);
-        if (!body_tag) {
-            std::cerr << "DEBUG parse step 18\n";
+        if (!body_tag)
             return std::unexpected(body_tag.error());
-        }
 
         return FetchRequest{RequestHeader{*api_key, *api_version, *correlation_id},
                             std::move(topic_ids)};

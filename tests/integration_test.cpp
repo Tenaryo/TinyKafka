@@ -612,12 +612,12 @@ TEST(IntegrationTest, ServerHandlesFetchRequestEmptyTopics) {
         request.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
         request.push_back(static_cast<uint8_t>(v & 0xFF));
     };
-    request.reserve(39);
-    push_be32(35); // message_length
+    request.reserve(40);
+    push_be32(36); // message_length
     push_be16(1);  // api_key = 1 (Fetch)
     push_be16(16); // api_version = 16
     push_be32(kTestCorrelationId);
-    request.push_back(0x00); // client_id = null
+    push_be16(0);            // client_id = null (int16 length)
     request.push_back(0x00); // header TAG_BUFFER
     push_be32(500);          // max_wait_ms
     push_be32(1);            // min_bytes
