@@ -45,6 +45,15 @@ auto Broker::build_topic_metadata(const std::string& topic_name) const -> TopicM
     };
 }
 
+auto Broker::find_topic_by_uuid(const std::array<std::uint8_t, 16>& id) const
+    -> const ClusterMetadata::TopicInfo* {
+    for (const auto& [name, info] : metadata_.topics) {
+        if (info.uuid == id)
+            return &info;
+    }
+    return nullptr;
+}
+
 auto Broker::handle(const Request& req) -> Response {
     return std::visit(overloaded{
                           [](const ApiVersionsRequest& r) -> Response {
@@ -70,20 +79,32 @@ auto Broker::handle(const Request& req) -> Response {
                                   .topics = std::move(topics),
                               };
                           },
-                          [](const FetchRequest& r) -> Response {
+                          [this](const FetchRequest& r) -> Response {
                               std::vector<FetchTopicResponse> topic_responses;
                               topic_responses.reserve(r.topic_ids.size());
                               for (const auto& tid : r.topic_ids) {
-                                  topic_responses.push_back(FetchTopicResponse{
-                                      .topic_id = tid,
-                                      .partitions =
-                                          {
-                                              FetchPartitionResponse{
-                                                  .partition_index = 0,
-                                                  .error_code = 100,
+                                  const auto* info = find_topic_by_uuid(tid);
+                                  if (info) {
+                                      std::vector<FetchPartitionResponse> parts;
+                                      parts.reserve(info->partitions.size());
+                                      for (int32_t pid : info->partitions) {
+                                          parts.push_back(
+                                              {.partition_index = pid, .error_code = 0});
+                                      }
+                                      topic_responses.push_back(
+                                          {.topic_id = tid, .partitions = std::move(parts)});
+                                  } else {
+                                      topic_responses.push_back(FetchTopicResponse{
+                                          .topic_id = tid,
+                                          .partitions =
+                                              {
+                                                  FetchPartitionResponse{
+                                                      .partition_index = 0,
+                                                      .error_code = 100,
+                                                  },
                                               },
-                                          },
-                                  });
+                                      });
+                                  }
                               }
                               return FetchResponse{
                                   .correlation_id = r.header.correlation_id,
