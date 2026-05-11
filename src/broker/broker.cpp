@@ -55,6 +55,14 @@ auto Broker::find_topic_by_uuid(const std::array<std::uint8_t, 16>& id) const
     return &metadata_.topics[it->second];
 }
 
+auto Broker::find_topic_by_name(const std::string& name) const
+    -> const ClusterMetadata::TopicInfo* {
+    auto it = metadata_.name_to_topic.find(name);
+    if (it == metadata_.name_to_topic.end())
+        return nullptr;
+    return &metadata_.topics[it->second];
+}
+
 auto Broker::handle(const Request& req) -> Response {
     return std::visit(
         overloaded{
@@ -85,16 +93,28 @@ auto Broker::handle(const Request& req) -> Response {
                 std::vector<ProduceTopicResponse> topic_responses;
                 topic_responses.reserve(r.topics.size());
                 for (const auto& topic_req : r.topics) {
+                    const auto* info = find_topic_by_name(topic_req.topic_name);
                     std::vector<ProducePartitionResponse> parts;
                     parts.reserve(topic_req.partitions.size());
                     for (const auto& part_req : topic_req.partitions) {
-                        parts.push_back(ProducePartitionResponse{
-                            .partition_index = part_req.partition_index,
-                            .error_code = 3,
-                            .base_offset = -1,
-                            .log_append_time_ms = -1,
-                            .log_start_offset = -1,
-                        });
+                        if (info && std::ranges::find(info->partitions, part_req.partition_index) !=
+                                        info->partitions.end()) {
+                            parts.push_back(ProducePartitionResponse{
+                                .partition_index = part_req.partition_index,
+                                .error_code = 0,
+                                .base_offset = 0,
+                                .log_append_time_ms = -1,
+                                .log_start_offset = 0,
+                            });
+                        } else {
+                            parts.push_back(ProducePartitionResponse{
+                                .partition_index = part_req.partition_index,
+                                .error_code = 3,
+                                .base_offset = -1,
+                                .log_append_time_ms = -1,
+                                .log_start_offset = -1,
+                            });
+                        }
                     }
                     topic_responses.push_back(
                         {.topic_name = topic_req.topic_name, .partitions = std::move(parts)});
