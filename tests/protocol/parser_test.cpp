@@ -356,13 +356,11 @@ TEST(ParserTest, ParsesProduceV11Request) {
     buf.push_back('f');
     buf.push_back('o');
     buf.push_back('o');
-    buf.push_back(0x00); // topic TAG_BUFFER
 
     buf.push_back(0x02); // partitions array: 1 element
     push_be32(0);        // partition_index = 0
-    buf.push_back(0x00); // partition TAG_BUFFER
     buf.push_back(0x01); // records: empty compact bytes
-    buf.push_back(0x00); // partition TAG_BUFFER (records trailing)
+    buf.push_back(0x00); // partition _tagged_fields
 
     buf.push_back(0x00); // topic TAG_BUFFER
 

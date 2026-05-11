@@ -240,10 +240,6 @@ auto parse_request(std::span<const std::uint8_t> buf) -> std::expected<Request, 
             if (!name)
                 return std::unexpected(name.error());
 
-            auto topic_tag = reader.skip(1); // TAG_BUFFER
-            if (!topic_tag)
-                return std::unexpected(topic_tag.error());
-
             auto part_array_len = reader.read_varint();
             if (!part_array_len)
                 return std::unexpected(part_array_len.error());
@@ -255,10 +251,6 @@ auto parse_request(std::span<const std::uint8_t> buf) -> std::expected<Request, 
                 auto part_idx = reader.read_int32();
                 if (!part_idx)
                     return std::unexpected(part_idx.error());
-
-                auto part_tag = reader.skip(1); // TAG_BUFFER
-                if (!part_tag)
-                    return std::unexpected(part_tag.error());
 
                 auto records_len = reader.read_varint();
                 if (!records_len)
