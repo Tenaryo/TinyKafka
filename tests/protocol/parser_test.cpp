@@ -122,3 +122,51 @@ TEST(ParserTest, ParsesMultipleTopicsWithTailFields) {
     EXPECT_EQ(req->topic_names[0], "zebra");
     EXPECT_EQ(req->topic_names[1], "apple");
 }
+
+TEST(ParserTest, ParsesFetchV16Request) {
+    std::vector<std::uint8_t> buf;
+    buf.push_back(0x00);
+    buf.push_back(0x01);
+    buf.push_back(0x00);
+    buf.push_back(0x10);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x2A);
+    buf.push_back(0x01);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x01);
+    buf.push_back(0xF4);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x01);
+    buf.push_back(0x00);
+    buf.push_back(0x10);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x01);
+    buf.push_back(0x01);
+    buf.push_back(0x01);
+    buf.push_back(0x00);
+
+    auto result = parse_request(buf);
+    ASSERT_TRUE(result.has_value());
+
+    auto req = std::get_if<FetchRequest>(&*result);
+    ASSERT_NE(req, nullptr);
+    EXPECT_EQ(req->header.api_key, 1);
+    EXPECT_EQ(req->header.api_version, 16);
+    EXPECT_EQ(req->header.correlation_id, 42);
+}

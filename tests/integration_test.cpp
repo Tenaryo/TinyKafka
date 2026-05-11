@@ -11,6 +11,7 @@
 #include <sys/wait.h>
 #include <thread>
 #include <unistd.h>
+#include <vector>
 
 #include <arpa/inet.h>
 #include <gtest/gtest.h>
@@ -592,4 +593,73 @@ TEST(IntegrationTest, ApiVersionsResponseContainsFetchApiEntry) {
     EXPECT_TRUE(found_apiversions) << "ApiVersions (key=18) entry not found in response";
     EXPECT_TRUE(found_describetopic)
         << "DescribeTopicPartitions (key=75) entry not found in response";
+}
+
+TEST(IntegrationTest, ServerHandlesFetchRequestEmptyTopics) {
+    ServerProcess server;
+
+    int sock = server.connect_with_retry();
+    ASSERT_GE(sock, 0) << "Failed to connect to server";
+
+    std::vector<uint8_t> request;
+    auto push_be16 = [&](int16_t v) {
+        request.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        request.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto push_be32 = [&](int32_t v) {
+        request.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+        request.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        request.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        request.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    request.reserve(39);
+    push_be32(35); // message_length
+    push_be16(1);  // api_key = 1 (Fetch)
+    push_be16(16); // api_version = 16
+    push_be32(kTestCorrelationId);
+    request.push_back(0x01); // client_id = empty compact string
+    request.push_back(0x00); // header TAG_BUFFER
+    push_be32(500);          // max_wait_ms
+    push_be32(1);            // min_bytes
+    push_be32(0x00100000);   // max_bytes = 1MB
+    request.push_back(0x00); // isolation_level
+    push_be32(0);            // session_id
+    push_be32(0);            // session_epoch
+    request.push_back(0x01); // topics array = empty
+    request.push_back(0x01); // forgotten_topics = empty
+    request.push_back(0x01); // rack_id = empty
+    request.push_back(0x00); // body TAG_BUFFER
+
+    auto sent = send(sock, request.data(), request.size(), 0);
+    ASSERT_GE(sent, 0) << "Failed to send request";
+
+    auto response = read_exactly<21>(sock);
+    close(sock);
+
+    EXPECT_EQ(response[0], 0x00);
+    EXPECT_EQ(response[1], 0x00);
+    EXPECT_EQ(response[2], 0x00);
+    EXPECT_EQ(response[3], 0x11); // message_size = 17
+
+    int32_t echoed_correlation_id =
+        decode_int32_be_response(std::span<const uint8_t, 4>{response.data() + 4, 4});
+    EXPECT_EQ(echoed_correlation_id, kTestCorrelationId);
+
+    EXPECT_EQ(response[8], 0x00); // header TAG_BUFFER
+
+    EXPECT_EQ(response[9], 0x00);
+    EXPECT_EQ(response[10], 0x00);
+    EXPECT_EQ(response[11], 0x00);
+    EXPECT_EQ(response[12], 0x00); // throttle_time_ms = 0
+
+    EXPECT_EQ(response[13], 0x00);
+    EXPECT_EQ(response[14], 0x00); // error_code = 0
+
+    EXPECT_EQ(response[15], 0x00);
+    EXPECT_EQ(response[16], 0x00);
+    EXPECT_EQ(response[17], 0x00);
+    EXPECT_EQ(response[18], 0x00); // session_id = 0
+
+    EXPECT_EQ(response[19], 0x01); // responses varint = 1 (0 entries)
+    EXPECT_EQ(response[20], 0x00); // body TAG_BUFFER
 }

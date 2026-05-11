@@ -171,3 +171,17 @@ TEST(BrokerTest, ReturnsFetchApiEntryWithMaxVersion16) {
     });
     EXPECT_NE(it, r.api_keys.end()) << "Fetch API (key=1) entry not found";
 }
+
+TEST(BrokerTest, HandlesFetchRequestEmptyTopics) {
+    RequestHeader header{1, 16, 42};
+    FetchRequest req{header};
+
+    auto resp = Broker(ClusterMetadata{}).handle(req);
+    auto r = std::get_if<FetchResponse>(&resp);
+    ASSERT_NE(r, nullptr);
+    EXPECT_EQ(r->correlation_id, 42);
+    EXPECT_EQ(r->throttle_time_ms, 0);
+    EXPECT_EQ(r->error_code, 0);
+    EXPECT_EQ(r->session_id, 0);
+    EXPECT_TRUE(r->responses.empty());
+}

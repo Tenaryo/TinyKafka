@@ -330,6 +330,40 @@ TEST(SerializerTest, SerializesDescribeTopicPartitionsMultiTopic) {
     EXPECT_EQ(bytes[161], 0x00); // body TAG_BUFFER
 }
 
+TEST(SerializerTest, SerializesFetchResponseEmptyTopics) {
+    FetchResponse resp{
+        .correlation_id = 0x12345678,
+        .throttle_time_ms = 0,
+        .error_code = 0,
+        .session_id = 0,
+        .responses = {},
+    };
+    auto bytes = serialize(resp);
+
+    ASSERT_EQ(bytes.size(), 21);
+    EXPECT_EQ(bytes[0], 0x00);
+    EXPECT_EQ(bytes[1], 0x00);
+    EXPECT_EQ(bytes[2], 0x00);
+    EXPECT_EQ(bytes[3], 0x11); // message_size = 17
+    EXPECT_EQ(bytes[4], 0x12);
+    EXPECT_EQ(bytes[5], 0x34);
+    EXPECT_EQ(bytes[6], 0x56);
+    EXPECT_EQ(bytes[7], 0x78); // correlation_id
+    EXPECT_EQ(bytes[8], 0x00); // header TAG_BUFFER
+    EXPECT_EQ(bytes[9], 0x00);
+    EXPECT_EQ(bytes[10], 0x00);
+    EXPECT_EQ(bytes[11], 0x00);
+    EXPECT_EQ(bytes[12], 0x00); // throttle_time_ms = 0
+    EXPECT_EQ(bytes[13], 0x00);
+    EXPECT_EQ(bytes[14], 0x00); // error_code = 0
+    EXPECT_EQ(bytes[15], 0x00);
+    EXPECT_EQ(bytes[16], 0x00);
+    EXPECT_EQ(bytes[17], 0x00);
+    EXPECT_EQ(bytes[18], 0x00); // session_id = 0
+    EXPECT_EQ(bytes[19], 0x01); // responses varint = 1 (0 entries)
+    EXPECT_EQ(bytes[20], 0x00); // body TAG_BUFFER
+}
+
 TEST(SerializerTest, SerializesFetchApiEntry) {
     ApiVersionsResponse resp{
         .correlation_id = 1,
