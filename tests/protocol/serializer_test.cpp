@@ -636,3 +636,71 @@ TEST(SerializerTest, SerializesProduceResponseUnknownTopic) {
 
     EXPECT_EQ(bytes[53], 0x00); // body tagged_fields
 }
+
+TEST(SerializerTest, SerializesProduceResponseValid) {
+    ProduceResponse resp{
+        .correlation_id = 999,
+        .throttle_time_ms = 0,
+        .responses =
+            {
+                ProduceTopicResponse{
+                    .topic_name = "orders",
+                    .partitions =
+                        {
+                            ProducePartitionResponse{
+                                .partition_index = 0,
+                                .error_code = 0,
+                                .base_offset = 0,
+                                .log_append_time_ms = -1,
+                                .log_start_offset = 0,
+                            },
+                        },
+                },
+            },
+    };
+    auto bytes = serialize(resp);
+
+    ASSERT_EQ(bytes.size(), 57);
+    EXPECT_EQ(bytes[3], 0x35); // message_size = 53
+
+    EXPECT_EQ(bytes[4], 0x00);
+    EXPECT_EQ(bytes[5], 0x00);
+    EXPECT_EQ(bytes[6], 0x03);
+    EXPECT_EQ(bytes[7], 0xE7); // correlation_id = 999
+
+    EXPECT_EQ(bytes[8], 0x00); // header TAG_BUFFER
+    EXPECT_EQ(bytes[9], 0x02); // responses varint = 2
+
+    EXPECT_EQ(bytes[10], 0x07); // name varint = 7
+    EXPECT_EQ(bytes[11], 'o');
+    EXPECT_EQ(bytes[12], 'r');
+    EXPECT_EQ(bytes[13], 'd');
+    EXPECT_EQ(bytes[14], 'e');
+    EXPECT_EQ(bytes[15], 'r');
+    EXPECT_EQ(bytes[16], 's');
+
+    EXPECT_EQ(bytes[17], 0x02); // partitions varint = 2
+
+    EXPECT_EQ(bytes[18], 0x00);
+    EXPECT_EQ(bytes[19], 0x00);
+    EXPECT_EQ(bytes[20], 0x00);
+    EXPECT_EQ(bytes[21], 0x00); // partition_index = 0
+
+    EXPECT_EQ(bytes[22], 0x00);
+    EXPECT_EQ(bytes[23], 0x00); // error_code = 0
+
+    for (size_t i = 24; i < 32; ++i)
+        EXPECT_EQ(bytes[i], 0x00); // base_offset = 0
+
+    for (size_t i = 32; i < 40; ++i)
+        EXPECT_EQ(bytes[i], 0xFF); // log_append_time_ms = -1
+
+    for (size_t i = 40; i < 48; ++i)
+        EXPECT_EQ(bytes[i], 0x00); // log_start_offset = 0
+
+    EXPECT_EQ(bytes[48], 0x01); // record_errors empty
+    EXPECT_EQ(bytes[49], 0x00); // error_message null
+    EXPECT_EQ(bytes[50], 0x00); // partition tagged_fields
+    EXPECT_EQ(bytes[51], 0x00); // topic tagged_fields
+    EXPECT_EQ(bytes[56], 0x00); // body tagged_fields
+}

@@ -450,3 +450,92 @@ TEST(BrokerTest, HandlesProduceRequestUnknownTopicOrPartition) {
     EXPECT_EQ(r->responses[0].partitions[0].log_append_time_ms, -1);
     EXPECT_EQ(r->responses[0].partitions[0].log_start_offset, -1);
 }
+
+TEST(BrokerTest, HandlesProduceRequestValidTopicAndPartition) {
+    constexpr TopicId topic_uuid = {
+        0xa1,
+        0xb2,
+        0xc3,
+        0xd4,
+        0xe5,
+        0xf6,
+        0xa7,
+        0xb8,
+        0xc9,
+        0xd0,
+        0xe1,
+        0xf2,
+        0xa3,
+        0xb4,
+        0xc5,
+        0xd6,
+    };
+    auto meta = make_meta_with_topic("orders", topic_uuid, {0, 1});
+
+    RequestHeader header{0, 11, 999};
+    ProduceRequest req{
+        header,
+        {{.topic_name = "orders", .partitions = {{.partition_index = 0}, {.partition_index = 1}}}},
+    };
+
+    auto resp = Broker(std::move(meta), "").handle(req);
+    auto r = std::get_if<ProduceResponse>(&resp);
+    ASSERT_NE(r, nullptr);
+    EXPECT_EQ(r->correlation_id, 999);
+    EXPECT_EQ(r->throttle_time_ms, 0);
+    ASSERT_EQ(r->responses.size(), 1u);
+    EXPECT_EQ(r->responses[0].topic_name, "orders");
+    ASSERT_EQ(r->responses[0].partitions.size(), 2u);
+    EXPECT_EQ(r->responses[0].partitions[0].partition_index, 0);
+    EXPECT_EQ(r->responses[0].partitions[0].error_code, 0);
+    EXPECT_EQ(r->responses[0].partitions[0].base_offset, 0);
+    EXPECT_EQ(r->responses[0].partitions[0].log_append_time_ms, -1);
+    EXPECT_EQ(r->responses[0].partitions[0].log_start_offset, 0);
+    EXPECT_EQ(r->responses[0].partitions[1].partition_index, 1);
+    EXPECT_EQ(r->responses[0].partitions[1].error_code, 0);
+    EXPECT_EQ(r->responses[0].partitions[1].base_offset, 0);
+    EXPECT_EQ(r->responses[0].partitions[1].log_append_time_ms, -1);
+    EXPECT_EQ(r->responses[0].partitions[1].log_start_offset, 0);
+}
+
+TEST(BrokerTest, HandlesProduceRequestKnownTopicUnknownPartition) {
+    constexpr TopicId topic_uuid = {
+        0xa1,
+        0xb2,
+        0xc3,
+        0xd4,
+        0xe5,
+        0xf6,
+        0xa7,
+        0xb8,
+        0xc9,
+        0xd0,
+        0xe1,
+        0xf2,
+        0xa3,
+        0xb4,
+        0xc5,
+        0xd6,
+    };
+    auto meta = make_meta_with_topic("orders", topic_uuid, {0});
+
+    RequestHeader header{0, 11, 42};
+    ProduceRequest req{header,
+                       {{.topic_name = "orders",
+                         .partitions = {{.partition_index = 0}, {.partition_index = 99}}}}};
+
+    auto resp = Broker(std::move(meta), "").handle(req);
+    auto r = std::get_if<ProduceResponse>(&resp);
+    ASSERT_NE(r, nullptr);
+    EXPECT_EQ(r->correlation_id, 42);
+    EXPECT_EQ(r->throttle_time_ms, 0);
+    ASSERT_EQ(r->responses.size(), 1u);
+    EXPECT_EQ(r->responses[0].topic_name, "orders");
+    ASSERT_EQ(r->responses[0].partitions.size(), 2u);
+    EXPECT_EQ(r->responses[0].partitions[0].partition_index, 0);
+    EXPECT_EQ(r->responses[0].partitions[0].error_code, 0);
+    EXPECT_EQ(r->responses[0].partitions[0].base_offset, 0);
+    EXPECT_EQ(r->responses[0].partitions[1].partition_index, 99);
+    EXPECT_EQ(r->responses[0].partitions[1].error_code, 3);
+    EXPECT_EQ(r->responses[0].partitions[1].base_offset, -1);
+}
