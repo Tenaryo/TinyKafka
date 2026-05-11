@@ -71,12 +71,26 @@ auto Broker::handle(const Request& req) -> Response {
                               };
                           },
                           [](const FetchRequest& r) -> Response {
+                              std::vector<FetchTopicResponse> topic_responses;
+                              topic_responses.reserve(r.topic_ids.size());
+                              for (const auto& tid : r.topic_ids) {
+                                  topic_responses.push_back(FetchTopicResponse{
+                                      .topic_id = tid,
+                                      .partitions =
+                                          {
+                                              FetchPartitionResponse{
+                                                  .partition_index = 0,
+                                                  .error_code = 100,
+                                              },
+                                          },
+                                  });
+                              }
                               return FetchResponse{
                                   .correlation_id = r.header.correlation_id,
                                   .throttle_time_ms = 0,
                                   .error_code = 0,
                                   .session_id = 0,
-                                  .responses = {},
+                                  .responses = std::move(topic_responses),
                               };
                           },
                       },

@@ -46,7 +46,15 @@ struct DescribeTopicPartitionsResponse {
     std::vector<TopicMetadata> topics;
 };
 
-struct FetchTopicResponse {};
+struct FetchPartitionResponse {
+    int32_t partition_index = 0;
+    int16_t error_code = 0;
+};
+
+struct FetchTopicResponse {
+    std::array<uint8_t, 16> topic_id{};
+    std::vector<FetchPartitionResponse> partitions;
+};
 
 struct FetchResponse {
     int32_t correlation_id;

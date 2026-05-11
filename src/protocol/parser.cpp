@@ -1,5 +1,7 @@
 #include "protocol/parser.hpp"
 
+#include <cstring>
+
 #include "util/byte_reader.hpp"
 #include "util/endian.hpp"
 
@@ -89,7 +91,74 @@ auto parse_request(std::span<const std::uint8_t> buf) -> std::expected<Request, 
         if (!header_tag)
             return std::unexpected(header_tag.error());
 
-        return FetchRequest{RequestHeader{*api_key, *api_version, *correlation_id}};
+        auto skip_fetch_cfg = reader.skip(4 + 4 + 4 + 1 + 4 + 4);
+        if (!skip_fetch_cfg)
+            return std::unexpected(skip_fetch_cfg.error());
+
+        auto topic_array_len = reader.read_varint();
+        if (!topic_array_len)
+            return std::unexpected(topic_array_len.error());
+        uint32_t topic_count = *topic_array_len > 0 ? *topic_array_len - 1 : 0;
+
+        std::vector<std::array<uint8_t, 16>> topic_ids;
+        topic_ids.reserve(topic_count);
+        for (uint32_t ti = 0; ti < topic_count; ++ti) {
+            auto tid_bytes = reader.read_bytes(16);
+            if (!tid_bytes)
+                return std::unexpected(tid_bytes.error());
+            std::array<uint8_t, 16> tid{};
+            std::memcpy(tid.data(), tid_bytes->data(), 16);
+            topic_ids.push_back(tid);
+
+            auto part_array_len = reader.read_varint();
+            if (!part_array_len)
+                return std::unexpected(part_array_len.error());
+            uint32_t part_count = *part_array_len > 0 ? *part_array_len - 1 : 0;
+            for (uint32_t pi = 0; pi < part_count; ++pi) {
+                auto skip_part = reader.skip(4 + 4 + 8 + 4 + 8 + 4);
+                if (!skip_part)
+                    return std::unexpected(skip_part.error());
+                auto skip_part_tag = reader.skip(1);
+                if (!skip_part_tag)
+                    return std::unexpected(skip_part_tag.error());
+            }
+
+            auto skip_topic_tag = reader.skip(1);
+            if (!skip_topic_tag)
+                return std::unexpected(skip_topic_tag.error());
+        }
+
+        auto forgotten_len = reader.read_varint();
+        if (!forgotten_len)
+            return std::unexpected(forgotten_len.error());
+        uint32_t forgotten_count = *forgotten_len > 0 ? *forgotten_len - 1 : 0;
+        for (uint32_t fi = 0; fi < forgotten_count; ++fi) {
+            auto skip_ftid = reader.skip(16);
+            if (!skip_ftid)
+                return std::unexpected(skip_ftid.error());
+            auto skip_fpart_len = reader.read_varint();
+            if (!skip_fpart_len)
+                return std::unexpected(skip_fpart_len.error());
+            auto skip_fpart_tag = reader.skip(1);
+            if (!skip_fpart_tag)
+                return std::unexpected(skip_fpart_tag.error());
+        }
+
+        auto rack_id_len = reader.read_varint();
+        if (!rack_id_len)
+            return std::unexpected(rack_id_len.error());
+        if (*rack_id_len > 1) {
+            auto skip_rack = reader.skip(static_cast<size_t>(*rack_id_len - 1));
+            if (!skip_rack)
+                return std::unexpected(skip_rack.error());
+        }
+
+        auto body_tag = reader.skip(1);
+        if (!body_tag)
+            return std::unexpected(body_tag.error());
+
+        return FetchRequest{RequestHeader{*api_key, *api_version, *correlation_id},
+                            std::move(topic_ids)};
     }
     default:
         return std::unexpected(make_error_code(std::errc::function_not_supported));

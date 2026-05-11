@@ -120,20 +120,46 @@ auto serialize(const Response& resp) -> std::vector<std::uint8_t> {
                 return buf;
             },
             [](const FetchResponse& r) -> std::vector<std::uint8_t> {
-                constexpr size_t body_size = 4 + 2 + 4 + 1 + 1;
-                constexpr size_t message_length = 4 + 1 + body_size;
-                std::vector<uint8_t> buf(4 + message_length);
+                size_t body_size = 4 + 1 + 4 + 2 + 4;
+                body_size += varint_encoded_size(static_cast<uint32_t>(r.responses.size()) + 1);
+                for (const auto& t : r.responses) {
+                    body_size += 16;
+                    body_size +=
+                        varint_encoded_size(static_cast<uint32_t>(t.partitions.size()) + 1);
+                    body_size += t.partitions.size() * 37;
+                    body_size += 1;
+                }
+                body_size += 1;
+
+                std::vector<uint8_t> buf(4 + body_size);
                 ByteWriter writer(buf);
 
-                writer.write_int32(static_cast<int32_t>(message_length));
+                writer.write_int32(static_cast<int32_t>(body_size));
                 writer.write_int32(r.correlation_id);
                 writer.write_int8(0x00);
                 writer.write_int32(r.throttle_time_ms);
                 writer.write_int16(r.error_code);
                 writer.write_int32(r.session_id);
                 writer.write_varint(static_cast<uint32_t>(r.responses.size()) + 1);
-                writer.write_int8(0x00);
 
+                for (const auto& t : r.responses) {
+                    writer.write_bytes(t.topic_id);
+                    writer.write_varint(static_cast<uint32_t>(t.partitions.size()) + 1);
+                    for (const auto& p : t.partitions) {
+                        writer.write_int32(p.partition_index);
+                        writer.write_int16(p.error_code);
+                        writer.write_int64(0);
+                        writer.write_int64(0);
+                        writer.write_int64(0);
+                        writer.write_varint(1);
+                        writer.write_int32(0);
+                        writer.write_varint(1);
+                        writer.write_int8(0x00);
+                    }
+                    writer.write_int8(0x00);
+                }
+
+                writer.write_int8(0x00);
                 return buf;
             },
         },

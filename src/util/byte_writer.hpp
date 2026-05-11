@@ -35,6 +35,11 @@ class ByteWriter {
         offset_ += 4;
     }
 
+    constexpr void write_int64(int64_t value) noexcept {
+        write_int64_be(value, std::span<uint8_t, 8>{data_.data() + offset_, 8});
+        offset_ += 8;
+    }
+
     constexpr void write_bytes(std::span<const uint8_t> data) noexcept {
         std::memcpy(data_.data() + offset_, data.data(), data.size());
         offset_ += data.size();

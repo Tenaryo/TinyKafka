@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <variant>
@@ -22,6 +23,7 @@ struct DescribeTopicPartitionsRequest {
 
 struct FetchRequest {
     RequestHeader header;
+    std::vector<std::array<uint8_t, 16>> topic_ids;
 };
 
 using Request = std::variant<ApiVersionsRequest, DescribeTopicPartitionsRequest, FetchRequest>;
