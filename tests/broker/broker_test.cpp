@@ -237,6 +237,20 @@ TEST(BrokerTest, ReturnsFetchApiEntryWithMaxVersion16) {
     EXPECT_NE(it, r.api_keys.end()) << "Fetch API (key=1) entry not found";
 }
 
+TEST(BrokerTest, ReturnsProduceApiEntryWithMaxVersion11) {
+    RequestHeader header{18, 4, 42};
+    ApiVersionsRequest req{header};
+
+    auto resp = Broker(ClusterMetadata{}, "").handle(req);
+    auto& r = std::get<ApiVersionsResponse>(resp);
+    EXPECT_EQ(r.error_code, 0);
+    ASSERT_FALSE(r.api_keys.empty());
+    auto it = std::ranges::find_if(r.api_keys, [](const auto& e) {
+        return e.api_key == 0 && e.min_version == 0 && e.max_version >= 11;
+    });
+    EXPECT_NE(it, r.api_keys.end()) << "Produce API (key=0) entry not found";
+}
+
 TEST(BrokerTest, HandlesFetchRequestEmptyTopics) {
     RequestHeader header{1, 16, 42};
     FetchRequest req{header, {}, 0};
