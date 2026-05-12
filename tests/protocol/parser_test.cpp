@@ -378,4 +378,66 @@ TEST(ParserTest, ParsesProduceV11Request) {
     EXPECT_EQ(req->topics[0].topic_name, "foo");
     ASSERT_EQ(req->topics[0].partitions.size(), 1u);
     EXPECT_EQ(req->topics[0].partitions[0].partition_index, 0);
+    EXPECT_TRUE(req->topics[0].partitions[0].records.empty());
+}
+
+TEST(ParserTest, ParsesProduceV11RequestWithRecords) {
+    std::vector<std::uint8_t> buf;
+    auto push_be16 = [&](int16_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto push_be32 = [&](int32_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+
+    push_be16(0);
+    push_be16(11);
+    push_be32(42);
+
+    push_be16(0);
+    buf.push_back(0x00);
+
+    buf.push_back(0x00);
+
+    push_be16(1);
+    push_be32(5000);
+
+    buf.push_back(0x02);
+
+    buf.push_back(0x04);
+    buf.push_back('f');
+    buf.push_back('o');
+    buf.push_back('o');
+
+    buf.push_back(0x02);
+    push_be32(0);
+    buf.push_back(0x04); // records varint = 4 → 3 bytes
+    buf.push_back(0xAB);
+    buf.push_back(0xCD);
+    buf.push_back(0xEF);
+    buf.push_back(0x00);
+
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+
+    auto result = parse_request(buf);
+    ASSERT_TRUE(result.has_value());
+
+    auto req = std::get_if<ProduceRequest>(&*result);
+    ASSERT_NE(req, nullptr);
+    EXPECT_EQ(req->header.api_key, 0);
+    EXPECT_EQ(req->header.api_version, 11);
+    EXPECT_EQ(req->header.correlation_id, 42);
+    ASSERT_EQ(req->topics.size(), 1u);
+    EXPECT_EQ(req->topics[0].topic_name, "foo");
+    ASSERT_EQ(req->topics[0].partitions.size(), 1u);
+    EXPECT_EQ(req->topics[0].partitions[0].partition_index, 0);
+    ASSERT_EQ(req->topics[0].partitions[0].records.size(), 3u);
+    EXPECT_EQ(req->topics[0].partitions[0].records[0], 0xAB);
+    EXPECT_EQ(req->topics[0].partitions[0].records[1], 0xCD);
+    EXPECT_EQ(req->topics[0].partitions[0].records[2], 0xEF);
 }

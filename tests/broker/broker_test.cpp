@@ -434,7 +434,8 @@ TEST(BrokerTest, HandlesFetchRequestReadsRecordBatchFromDisk) {
 
 TEST(BrokerTest, HandlesProduceRequestUnknownTopicOrPartition) {
     RequestHeader header{0, 11, 42};
-    ProduceRequest req{header, {{.topic_name = "foo", .partitions = {{.partition_index = 0}}}}};
+    ProduceRequest req{
+        header, {{.topic_name = "foo", .partitions = {{.partition_index = 0, .records = {}}}}}};
 
     auto resp = Broker(ClusterMetadata{}, "").handle(req);
     auto r = std::get_if<ProduceResponse>(&resp);
@@ -475,7 +476,9 @@ TEST(BrokerTest, HandlesProduceRequestValidTopicAndPartition) {
     RequestHeader header{0, 11, 999};
     ProduceRequest req{
         header,
-        {{.topic_name = "orders", .partitions = {{.partition_index = 0}, {.partition_index = 1}}}},
+        {{.topic_name = "orders",
+          .partitions = {{.partition_index = 0, .records = {}},
+                         {.partition_index = 1, .records = {}}}}},
     };
 
     auto resp = Broker(std::move(meta), "").handle(req);
@@ -522,7 +525,8 @@ TEST(BrokerTest, HandlesProduceRequestKnownTopicUnknownPartition) {
     RequestHeader header{0, 11, 42};
     ProduceRequest req{header,
                        {{.topic_name = "orders",
-                         .partitions = {{.partition_index = 0}, {.partition_index = 99}}}}};
+                         .partitions = {{.partition_index = 0, .records = {}},
+                                        {.partition_index = 99, .records = {}}}}}};
 
     auto resp = Broker(std::move(meta), "").handle(req);
     auto r = std::get_if<ProduceResponse>(&resp);
@@ -538,4 +542,61 @@ TEST(BrokerTest, HandlesProduceRequestKnownTopicUnknownPartition) {
     EXPECT_EQ(r->responses[0].partitions[1].partition_index, 99);
     EXPECT_EQ(r->responses[0].partitions[1].error_code, 3);
     EXPECT_EQ(r->responses[0].partitions[1].base_offset, -1);
+}
+
+TEST(BrokerTest, HandlesProduceRequestWritesToDisk) {
+    constexpr TopicId topic_uuid = {
+        0xa1,
+        0xb2,
+        0xc3,
+        0xd4,
+        0xe5,
+        0xf6,
+        0xa7,
+        0xb8,
+        0xc9,
+        0xd0,
+        0xe1,
+        0xf2,
+        0xa3,
+        0xb4,
+        0xc5,
+        0xd6,
+    };
+    std::vector<uint8_t> record_batch = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05};
+
+    auto tmp_dir = make_tmp_log_dir();
+    auto meta = make_meta_with_topic("orders", topic_uuid, {0});
+
+    RequestHeader header{0, 11, 999};
+    ProduceRequest req{header,
+                       {{.topic_name = "orders",
+                         .partitions = {{.partition_index = 0, .records = record_batch}}}}};
+
+    auto resp = Broker(std::move(meta), tmp_dir).handle(req);
+    auto r = std::get_if<ProduceResponse>(&resp);
+    ASSERT_NE(r, nullptr);
+    EXPECT_EQ(r->correlation_id, 999);
+    EXPECT_EQ(r->throttle_time_ms, 0);
+    ASSERT_EQ(r->responses.size(), 1u);
+    EXPECT_EQ(r->responses[0].topic_name, "orders");
+    ASSERT_EQ(r->responses[0].partitions.size(), 1u);
+    EXPECT_EQ(r->responses[0].partitions[0].partition_index, 0);
+    EXPECT_EQ(r->responses[0].partitions[0].error_code, 0);
+    EXPECT_EQ(r->responses[0].partitions[0].base_offset, 0);
+    EXPECT_EQ(r->responses[0].partitions[0].log_append_time_ms, -1);
+    EXPECT_EQ(r->responses[0].partitions[0].log_start_offset, 0);
+
+    auto log_path = tmp_dir + "/orders-0/00000000000000000000.log";
+    EXPECT_TRUE(std::filesystem::exists(log_path));
+    std::ifstream f(log_path, std::ios::binary | std::ios::ate);
+    ASSERT_TRUE(f.is_open());
+    auto sz = f.tellg();
+    ASSERT_EQ(static_cast<size_t>(sz), record_batch.size());
+    f.seekg(0);
+    std::vector<uint8_t> readback(static_cast<size_t>(sz));
+    f.read(reinterpret_cast<char*>(readback.data()), sz);
+    EXPECT_EQ(readback, record_batch);
+
+    std::filesystem::remove_all(tmp_dir);
 }

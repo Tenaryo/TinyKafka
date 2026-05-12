@@ -979,3 +979,184 @@ TEST(IntegrationTest, FetchResponseReturnsRecordBatchFromDisk) {
         EXPECT_EQ(body[off + i], record_batch_data[i]);
     }
 }
+
+TEST(IntegrationTest, ProduceRequestPersistsRecordBatchToDisk) {
+    constexpr std::array<uint8_t, 16> kTopicUuid = {
+        0xa1,
+        0xb2,
+        0xc3,
+        0xd4,
+        0xe5,
+        0xf6,
+        0xa7,
+        0xb8,
+        0xc9,
+        0xd0,
+        0xe1,
+        0xf2,
+        0xa3,
+        0xb4,
+        0xc5,
+        0xd6,
+    };
+
+    std::vector<uint8_t> record_value = {0x01, 0x02, 0x03};
+    auto record_batch = build_record_batch({record_value});
+
+    namespace fs = std::filesystem;
+    const char* root = "/tmp/kraft-combined-logs";
+
+    fs::remove_all(root);
+    fs::create_directories(std::string(root) + "/__cluster_metadata-0");
+    {
+        auto topic_val = make_topic_record_value("orders", kTopicUuid);
+        auto part_val = make_partition_record_value(0, kTopicUuid);
+        auto batch = build_record_batch({topic_val, part_val});
+        std::ofstream f(std::string(root) + "/__cluster_metadata-0/00000000000000000000.log",
+                        std::ios::binary);
+        f.write(reinterpret_cast<const char*>(batch.data()),
+                static_cast<std::streamsize>(batch.size()));
+    }
+
+    ServerProcess server;
+
+    int sock = server.connect_with_retry();
+    ASSERT_GE(sock, 0) << "Failed to connect to server";
+
+    std::vector<uint8_t> request;
+    auto pb16 = [&](int16_t v) {
+        request.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        request.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto pb32 = [&](int32_t v) {
+        request.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+        request.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        request.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        request.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+
+    request.reserve(128);
+    pb32(0); // message_length placeholder
+    size_t body_start = request.size();
+    pb16(0);  // api_key = Produce
+    pb16(11); // api_version = 11
+    pb32(kTestCorrelationId);
+
+    pb16(-1);                // client_id = null
+    request.push_back(0x00); // header TAG_BUFFER
+    request.push_back(0x00); // transactional_id = null
+    pb16(1);                 // acks = 1
+    pb32(5000);              // timeout_ms = 5000
+
+    request.push_back(0x02); // topics array: 1 element
+    request.push_back(0x07); // topic name varint = 7 (6 bytes)
+    request.push_back('o');
+    request.push_back('r');
+    request.push_back('d');
+    request.push_back('e');
+    request.push_back('r');
+    request.push_back('s');
+
+    request.push_back(0x02); // partitions array: 1 element
+    pb32(0);                 // partition_index = 0
+    // records: compact bytes (varint length+1, then bytes)
+    push_unsigned_varint(request, static_cast<uint32_t>(record_batch.size()) + 1);
+    request.insert(request.end(), record_batch.begin(), record_batch.end());
+    request.push_back(0x00); // partition TAG_BUFFER
+    request.push_back(0x00); // topic TAG_BUFFER
+    request.push_back(0x00); // body TAG_BUFFER
+
+    int32_t message_len = static_cast<int32_t>(request.size() - body_start);
+    request[0] = static_cast<uint8_t>((message_len >> 24) & 0xFF);
+    request[1] = static_cast<uint8_t>((message_len >> 16) & 0xFF);
+    request[2] = static_cast<uint8_t>((message_len >> 8) & 0xFF);
+    request[3] = static_cast<uint8_t>(message_len & 0xFF);
+
+    auto sent = send(sock, request.data(), request.size(), 0);
+    ASSERT_GE(sent, 0) << "Failed to send Produce request";
+
+    auto len_prefix = read_exactly<4>(sock);
+    int32_t resp_msg_len = decode_int32_be_response(len_prefix);
+    EXPECT_GT(resp_msg_len, 0) << "Response message length must be positive";
+
+    std::vector<uint8_t> body(resp_msg_len);
+    size_t total = 0;
+    while (total < body.size()) {
+        auto n = read(sock, body.data() + total, body.size() - total);
+        ASSERT_GT(n, 0) << "Failed to read response body";
+        total += static_cast<size_t>(n);
+    }
+    close(sock);
+
+    int32_t echoed_cid = (static_cast<int32_t>(body[0]) << 24) |
+                         (static_cast<int32_t>(body[1]) << 16) |
+                         (static_cast<int32_t>(body[2]) << 8) | static_cast<int32_t>(body[3]);
+    EXPECT_EQ(echoed_cid, kTestCorrelationId) << "Correlation ID mismatch";
+
+    EXPECT_EQ(body[4], 0x00); // header TAG_BUFFER
+
+    size_t off = 5;
+    ASSERT_LT(off, body.size());
+    uint32_t resp_len = static_cast<uint32_t>(body[off++]);
+    ASSERT_GE(resp_len, 2u) << "topics array must contain at least 1 element";
+    EXPECT_EQ(resp_len - 1, 1u) << "Expected 1 topic response";
+
+    ASSERT_LT(off, body.size());
+    uint32_t name_len = static_cast<uint32_t>(body[off++]);
+    EXPECT_EQ(name_len - 1, 6u) << "Expected topic name length 6";
+    std::string resp_name(body.begin() + static_cast<ptrdiff_t>(off),
+                          body.begin() + static_cast<ptrdiff_t>(off + name_len - 1));
+    EXPECT_EQ(resp_name, "orders");
+    off += name_len - 1;
+
+    ASSERT_LT(off, body.size());
+    uint32_t part_len = static_cast<uint32_t>(body[off++]);
+    ASSERT_GE(part_len, 2u) << "partitions array must contain at least 1 element";
+    EXPECT_EQ(part_len - 1, 1u) << "Expected 1 partition response";
+
+    int32_t part_idx =
+        (static_cast<int32_t>(body[off]) << 24) | (static_cast<int32_t>(body[off + 1]) << 16) |
+        (static_cast<int32_t>(body[off + 2]) << 8) | static_cast<int32_t>(body[off + 3]);
+    EXPECT_EQ(part_idx, 0) << "Partition index must be 0";
+    off += 4;
+
+    int16_t part_err = (static_cast<int16_t>(body[off]) << 8) | static_cast<int16_t>(body[off + 1]);
+    EXPECT_EQ(part_err, 0) << "Error code must be 0 (NO_ERROR)";
+    off += 2;
+
+    int64_t base_offset =
+        (static_cast<int64_t>(body[off]) << 56) | (static_cast<int64_t>(body[off + 1]) << 48) |
+        (static_cast<int64_t>(body[off + 2]) << 40) | (static_cast<int64_t>(body[off + 3]) << 32) |
+        (static_cast<int64_t>(body[off + 4]) << 24) | (static_cast<int64_t>(body[off + 5]) << 16) |
+        (static_cast<int64_t>(body[off + 6]) << 8) | static_cast<int64_t>(body[off + 7]);
+    EXPECT_EQ(base_offset, 0) << "base_offset must be 0";
+    off += 8;
+
+    int64_t log_append_time =
+        (static_cast<int64_t>(body[off]) << 56) | (static_cast<int64_t>(body[off + 1]) << 48) |
+        (static_cast<int64_t>(body[off + 2]) << 40) | (static_cast<int64_t>(body[off + 3]) << 32) |
+        (static_cast<int64_t>(body[off + 4]) << 24) | (static_cast<int64_t>(body[off + 5]) << 16) |
+        (static_cast<int64_t>(body[off + 6]) << 8) | static_cast<int64_t>(body[off + 7]);
+    EXPECT_EQ(log_append_time, -1) << "log_append_time_ms must be -1";
+    off += 8;
+
+    int64_t log_start =
+        (static_cast<int64_t>(body[off]) << 56) | (static_cast<int64_t>(body[off + 1]) << 48) |
+        (static_cast<int64_t>(body[off + 2]) << 40) | (static_cast<int64_t>(body[off + 3]) << 32) |
+        (static_cast<int64_t>(body[off + 4]) << 24) | (static_cast<int64_t>(body[off + 5]) << 16) |
+        (static_cast<int64_t>(body[off + 6]) << 8) | static_cast<int64_t>(body[off + 7]);
+    EXPECT_EQ(log_start, 0) << "log_start_offset must be 0";
+
+    // Verify disk persistence
+    auto log_path = std::string(root) + "/orders-0/00000000000000000000.log";
+    EXPECT_TRUE(fs::exists(log_path));
+
+    std::ifstream log_file(log_path, std::ios::binary | std::ios::ate);
+    ASSERT_TRUE(log_file.is_open());
+    auto file_sz = log_file.tellg();
+    ASSERT_EQ(static_cast<size_t>(file_sz), record_batch.size());
+    log_file.seekg(0);
+    std::vector<uint8_t> disk_buf(static_cast<size_t>(file_sz));
+    log_file.read(reinterpret_cast<char*>(disk_buf.data()), file_sz);
+    EXPECT_EQ(disk_buf, record_batch);
+}
