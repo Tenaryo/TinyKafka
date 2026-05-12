@@ -38,6 +38,7 @@ struct FetchRequest {
 
 struct ProducePartitionRequest {
     int32_t partition_index = 0;
+    std::vector<uint8_t> records;
 };
 
 struct ProduceTopicRequest {

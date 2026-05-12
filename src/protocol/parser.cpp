@@ -255,17 +255,21 @@ auto parse_request(std::span<const std::uint8_t> buf) -> std::expected<Request, 
                 auto records_len = reader.read_varint();
                 if (!records_len)
                     return std::unexpected(records_len.error());
+                std::vector<std::uint8_t> records;
                 if (*records_len > 1) {
-                    auto skip_records = reader.skip(static_cast<size_t>(*records_len - 1));
-                    if (!skip_records)
-                        return std::unexpected(skip_records.error());
+                    auto records_span = reader.read_bytes(static_cast<size_t>(*records_len - 1));
+                    if (!records_span)
+                        return std::unexpected(records_span.error());
+                    // TODO: could use std::span<const uint8_t> for zero-copy,
+                    // but retaining owning vector for future async safety
+                    records.assign(records_span->begin(), records_span->end());
                 }
 
                 auto rec_tag = reader.skip(1); // TAG_BUFFER
                 if (!rec_tag)
                     return std::unexpected(rec_tag.error());
 
-                parts.push_back({.partition_index = *part_idx});
+                parts.push_back({.partition_index = *part_idx, .records = std::move(records)});
             }
 
             auto topic_end_tag = reader.skip(1); // TAG_BUFFER

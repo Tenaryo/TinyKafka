@@ -14,6 +14,7 @@ add_library(TinyKafka_core STATIC
     src/protocol/parser.cpp
     src/protocol/serializer.cpp
     src/storage/log_reader.cpp
+    src/storage/log_writer.cpp
 )
 target_include_directories(TinyKafka_core PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_compile_features(TinyKafka_core PUBLIC cxx_std_23)

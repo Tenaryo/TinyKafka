@@ -5,6 +5,7 @@
 #include "protocol/api_registry.hpp"
 #include "protocol/response.hpp"
 #include "storage/log_reader.hpp"
+#include "storage/log_writer.hpp"
 #include "util/overloaded.hpp"
 
 auto Broker::build_topic_metadata(const std::string& topic_name) const -> TopicMetadata {
@@ -99,6 +100,12 @@ auto Broker::handle(const Request& req) -> Response {
                     for (const auto& part_req : topic_req.partitions) {
                         if (info && std::ranges::find(info->partitions, part_req.partition_index) !=
                                         info->partitions.end()) {
+                            if (!part_req.records.empty()) {
+                                storage::write_topic_log(log_root_,
+                                                         topic_req.topic_name,
+                                                         part_req.partition_index,
+                                                         part_req.records);
+                            }
                             parts.push_back(ProducePartitionResponse{
                                 .partition_index = part_req.partition_index,
                                 .error_code = 0,
