@@ -1,3 +1,5 @@
-name: Config
-description: Configure issue templates
-contact_links: []
+blank_issues_enabled: true
+contact_links:
+  - name: Discussions
+    url: https://github.com/Tenaryo/TinyKafka/discussions
+    about: Ask questions and discuss ideas here
