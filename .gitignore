@@ -33,3 +33,13 @@ Thumbs.db
 
 # Project
 *.log
+
+# Coverage
+*.gcda
+*.gcno
+*.gcov
+coverage/
+
+# Benchmark
+benchmark/build/
+benchmark/results/

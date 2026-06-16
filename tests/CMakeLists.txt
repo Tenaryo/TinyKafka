@@ -1,4 +1,10 @@
-file(GLOB_RECURSE TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
+set(TEST_SOURCES
+    integration_test.cpp
+    broker/broker_test.cpp
+    cluster/metadata_test.cpp
+    protocol/parser_test.cpp
+    protocol/serializer_test.cpp
+)
 
 foreach(TEST_FILE ${TEST_SOURCES})
     get_filename_component(TEST_NAME ${TEST_FILE} NAME_WE)

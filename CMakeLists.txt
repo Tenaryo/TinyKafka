@@ -2,8 +2,6 @@ cmake_minimum_required(VERSION 3.21)
 
 project(TinyKafka VERSION 1.0.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 23)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_library(TinyKafka_core STATIC
@@ -18,7 +16,7 @@ add_library(TinyKafka_core STATIC
 )
 target_include_directories(TinyKafka_core PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_compile_features(TinyKafka_core PUBLIC cxx_std_23)
-target_compile_options(TinyKafka_core PUBLIC
+target_compile_options(TinyKafka_core PRIVATE
     -Wall -Wextra -Wpedantic -Werror -Wshadow -Wconversion
     $<$<CONFIG:Debug>:-g -O0>
     $<$<CONFIG:Release>:-O3>
@@ -62,3 +60,6 @@ if(BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+include(GNUInstallDirs)
+install(TARGETS kafka RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
