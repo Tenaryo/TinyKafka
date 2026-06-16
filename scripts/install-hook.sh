@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-HOOKS_DIR="$(git -C "$PROJECT_ROOT" rev-parse --git-dir)/hooks"
+HOOKS_DIR="$(git -C "$PROJECT_ROOT" rev-parse --git-common-dir)/hooks"
 HOOK_PATH="${HOOKS_DIR}/pre-commit"
 
 cp "${PROJECT_ROOT}/scripts/pre-commit" "$HOOK_PATH"
