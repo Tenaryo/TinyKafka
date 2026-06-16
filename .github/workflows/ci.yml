@@ -8,28 +8,70 @@ on:
 
 jobs:
   build-and-test:
-    name: Build & Test (GCC 13)
+    name: ${{ matrix.name }}
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: GCC 13 Debug
+            compiler: g++-13
+            build-type: Debug
+            sanitize: false
+          - name: GCC 13 Debug + San
+            compiler: g++-13
+            build-type: Debug
+            sanitize: true
+          - name: GCC 13 Release
+            compiler: g++-13
+            build-type: Release
+            sanitize: false
+          - name: GCC 14 Debug
+            compiler: g++-14
+            build-type: Debug
+            sanitize: false
+          - name: GCC 14 Debug + San
+            compiler: g++-14
+            build-type: Debug
+            sanitize: true
+          - name: GCC 14 Release
+            compiler: g++-14
+            build-type: Release
+            sanitize: false
+          - name: Clang 18 Debug
+            compiler: clang++-18
+            build-type: Debug
+            sanitize: false
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++-13 ninja-build cmake
+          sudo apt-get install -y ninja-build cmake ${{ matrix.compiler }}
+          # clang requires libc++ for full C++23 support
+          if [[ "${{ matrix.compiler }}" == clang++* ]]; then
+            sudo apt-get install -y libc++-18-dev libc++abi-18-dev libunwind-18-dev lld-18
+          fi
 
       - name: Configure CMake
         run: |
+          SANITIZE_FLAG=""
+          if ${{ matrix.sanitize }}; then
+            SANITIZE_FLAG="-DENABLE_SANITIZERS=ON"
+          fi
           cmake -B build -S . -G Ninja \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_CXX_COMPILER=g++-13 \
-            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+            -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
+            -DCMAKE_CXX_COMPILER=${{ matrix.compiler }} \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            $SANITIZE_FLAG
 
       - name: Build
         run: cmake --build build -j $(nproc)
 
       - name: Run tests
-        run: ./run_tests.sh
+        run: ctest --test-dir build --output-on-failure -j $(nproc)
 
   format-check:
     name: clang-format Check
