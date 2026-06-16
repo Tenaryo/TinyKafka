@@ -34,6 +34,16 @@ if(ENABLE_SANITIZERS)
     target_link_options(TinyKafka_core INTERFACE -fsanitize=address,undefined)
 endif()
 
+option(ENABLE_COVERAGE "Enable code coverage instrumentation (GCC)" OFF)
+
+if(ENABLE_COVERAGE)
+    if(ENABLE_SANITIZERS)
+        message(FATAL_ERROR "ENABLE_COVERAGE and ENABLE_SANITIZERS are mutually exclusive")
+    endif()
+    target_compile_options(TinyKafka_core PUBLIC --coverage)
+    target_link_options(TinyKafka_core PUBLIC --coverage)
+endif()
+
 option(BUILD_TESTS "Build tests" ON)
 if(BUILD_TESTS)
     include(FetchContent)

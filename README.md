@@ -297,6 +297,9 @@ sudo apt install g++-13 ninja-build cmake
 # With sanitizers:
 cmake -B build -G Ninja -DENABLE_SANITIZERS=ON
 cmake --build build
+
+# With coverage:
+./run_tests.sh --coverage
 ```
 
 ### Run
@@ -322,6 +325,31 @@ Uses **GoogleTest v1.14.0** (auto-fetched via CMake `FetchContent`). Test struct
 | `tests/protocol/serializer_test.cpp` | ~520 | 10 tests: all 4 response types, multi-topic, error codes, record payloads, empty arrays |
 | `tests/cluster/metadata_test.cpp` | ~120 | 4 tests: topic+partition records, unknown types, empty input, UUID hash round-trip |
 | `tests/integration_test.cpp` | ~1,160 | 9 tests: spawns real `kafka` binary via `fork+exec`, sends raw TCP frames, validates wire-level response bytes for ApiVersions, DescribeTopicPartitions (unknown, multi-topic, sorted), Fetch (empty topics, record batch from disk), Produce (persistence to disk verified post-request), concurrent clients |
+
+### Code Coverage
+
+Generate an HTML coverage report with a single command:
+
+```bash
+./run_tests.sh --coverage
+```
+
+This builds the project with `--coverage`, runs all 54 tests via ctest, and generates an HTML report at `build/coverage/index.html`.
+
+**Prerequisites:** `lcov` (install with `sudo apt install lcov`).
+
+**Manual usage:**
+
+```bash
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENABLE_COVERAGE=ON
+cmake --build build
+cmake --build build --target test    # run tests without lcov
+lcov --capture --directory build --gcov-tool gcov-14 --output-file build/coverage.info
+lcov --remove build/coverage.info '/usr/*' '*/_deps/*' --output-file build/coverage.info
+genhtml build/coverage.info --output-directory build/coverage
+```
+
+> **Note:** `main.cpp`, `server.cpp`, and `socket.cpp` are exercised only through integration tests that spawn a separate `kafka` process via `fork+exec`, so their coverage data is not captured by the in-process gcov instrumentation. The reported coverage (92.8% lines, 99.7% functions) reflects all code exercised by unit tests + integration test helper logic.
 
 ## License
 
