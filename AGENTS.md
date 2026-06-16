@@ -1,11 +1,3 @@
-# 项目开发目标
-
-当前目标概述：从当前"协议骨架"演进为端到端可用的 Kafka 兼容 Broker：标准 Kafka 客户端可直接连接使用，提供 Producer/Consumer 全链路、Consumer Group 协调，并在并发架构和存储引擎上做出有辨识度的设计选择，最终产出与 Apache Kafka 对比的性能数据。
-
-1. **标准客户端接入** — 开发者使用 `kafka-console-producer` / `kafka-console-consumer` 或 `librdkafka` 连接 TinyKafka，体验与 Apache Kafka 一致的交互
-2. **Consumer Group 协同消费** — 多个 consumer 实例组成 group，自动 rebalance 分配 partition，支持 offset 提交和恢复
-3. **性能基准对比** — 一键运行 benchmark，产出 TinyKafka vs Apache Kafka 的吞吐和延迟对比数据，作为技术能力的量化证明
-
 # C++编码规范
 
 ## TDD 流程
