@@ -52,7 +52,7 @@ TEST(ConfigTest, LoadFromFile) {
 }
 
 TEST(ConfigTest, CliOverridesDefaults) {
-    CliArgs args({"--port=9093", "--log.dirs=/cli/path", "--max.message.bytes=65536"});
+    CliArgs args({"./kafka", "--port=9093", "--log.dirs=/cli/path", "--max.message.bytes=65536"});
     auto config = config::Config::load(args.argc(), args.argv(), "/nonexistent/path");
     EXPECT_EQ(config.port, 9093);
     EXPECT_EQ(config.log_root, "/cli/path");
@@ -63,7 +63,7 @@ TEST(ConfigTest, FileThenCliOverride) {
     const std::string path = "/tmp/test_config_mix.properties";
     write_temp_file(path, "port=1111\nlog.dirs=/file/path\n");
 
-    CliArgs args({"--port=2222"});
+    CliArgs args({"./kafka", "--port=2222"});
     auto config = config::Config::load(args.argc(), args.argv(), path);
     EXPECT_EQ(config.port, 2222);
     EXPECT_EQ(config.log_root, "/file/path");

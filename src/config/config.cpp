@@ -3,12 +3,15 @@
 #include "config/properties.hpp"
 
 #include <charconv>
+#include <iostream>
 #include <string_view>
 
 namespace config {
 
-static auto parse_uint16(std::string_view sv) -> uint16_t {
-    uint16_t result = 0;
+namespace {
+
+template <typename T> auto parse_int(std::string_view sv) -> T {
+    T result = 0;
     auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), result);
     if (ec == std::errc{} && ptr == sv.data() + sv.size()) {
         return result;
@@ -16,16 +19,7 @@ static auto parse_uint16(std::string_view sv) -> uint16_t {
     return 0;
 }
 
-static auto parse_uint32(std::string_view sv) -> uint32_t {
-    uint32_t result = 0;
-    auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), result);
-    if (ec == std::errc{} && ptr == sv.data() + sv.size()) {
-        return result;
-    }
-    return 0;
-}
-
-static auto parse_cli_arg(std::string_view arg) -> std::pair<std::string_view, std::string_view> {
+auto parse_cli_arg(std::string_view arg) -> std::pair<std::string_view, std::string_view> {
     if (arg.starts_with("--")) {
         arg.remove_prefix(2);
     }
@@ -36,21 +30,29 @@ static auto parse_cli_arg(std::string_view arg) -> std::pair<std::string_view, s
     return {arg.substr(0, eq_pos), arg.substr(eq_pos + 1)};
 }
 
-static void apply_config_key(Config& config, std::string_view key, std::string_view value) {
+void apply_config_key(Config& config, std::string_view key, std::string_view value) {
     if (key == "port") {
-        auto parsed = parse_uint16(value);
+        auto parsed = parse_int<uint16_t>(value);
         if (parsed != 0) {
             config.port = parsed;
+        } else {
+            std::cerr << "[config] invalid port value: " << value << ", using default "
+                      << config.port << '\n';
         }
     } else if (key == "log.dirs") {
         config.log_root = value;
     } else if (key == "max.message.bytes") {
-        auto parsed = parse_uint32(value);
+        auto parsed = parse_int<uint32_t>(value);
         if (parsed != 0) {
             config.max_message_bytes = parsed;
+        } else {
+            std::cerr << "[config] invalid max.message.bytes value: " << value << ", using default "
+                      << config.max_message_bytes << '\n';
         }
     }
 }
+
+} // namespace
 
 auto Config::load(int argc, char** argv, std::string_view config_path) -> Config {
     Config config;
@@ -64,7 +66,7 @@ auto Config::load(int argc, char** argv, std::string_view config_path) -> Config
         }
     }
 
-    for (int i = 0; i < argc; ++i) {
+    for (int i = 1; i < argc; ++i) {
         auto [key, value] = parse_cli_arg(argv[i]);
         if (!key.empty()) {
             apply_config_key(config, key, value);

@@ -11,8 +11,8 @@ struct Config {
     std::string log_root = "/tmp/kraft-combined-logs";
     uint32_t max_message_bytes = 1'048'576;
 
-    static auto load(int argc, char** argv,
-                     std::string_view config_path = "config.properties") -> Config;
+    [[nodiscard]] static auto
+    load(int argc, char** argv, std::string_view config_path = "config.properties") -> Config;
 };
 
 } // namespace config

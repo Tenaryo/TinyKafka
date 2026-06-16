@@ -37,7 +37,7 @@ int main(int argc, char** argv) {
 
         int client_fd = *client;
 
-        int max_msg = static_cast<int>(config.max_message_bytes);
+        uint32_t max_msg = config.max_message_bytes;
         std::string log_root_copy = config.log_root;
 
         std::thread([client_fd, metadata, log_root_copy, max_msg] {
