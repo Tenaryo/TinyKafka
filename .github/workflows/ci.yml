@@ -50,10 +50,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build cmake ${{ matrix.compiler }}
-          # clang requires libc++ for full C++23 support
-          if [[ "${{ matrix.compiler }}" == clang++* ]]; then
-            sudo apt-get install -y libc++-18-dev libc++abi-18-dev libunwind-18-dev lld-18
-          fi
 
       - name: Configure CMake
         run: |
@@ -72,6 +68,9 @@ jobs:
 
       - name: Run tests
         run: ctest --test-dir build --output-on-failure -j $(nproc)
+        env:
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
 
   format-check:
     name: clang-format Check

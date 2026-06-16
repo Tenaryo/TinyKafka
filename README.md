@@ -334,7 +334,7 @@ Generate an HTML coverage report with a single command:
 ./run_tests.sh --coverage
 ```
 
-This builds the project with `--coverage`, runs all 54 tests via ctest, and generates an HTML report at `build/coverage/index.html`.
+This builds the project with `--coverage`, runs all tests via ctest, and generates an HTML report at `build/coverage/report/index.html`.
 
 **Prerequisites:** `lcov` (install with `sudo apt install lcov`).
 

@@ -92,6 +92,13 @@
       "output": {
         "outputOnFailure": true
       }
+    },
+    {
+      "name": "coverage",
+      "configurePreset": "coverage",
+      "output": {
+        "outputOnFailure": true
+      }
     }
   ]
 }

@@ -25,6 +25,13 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$MODE" in
+sanitize) BUILD_DIR="build/sanitize" ;;
+release)  BUILD_DIR="build/release" ;;
+coverage) BUILD_DIR="build/coverage" ;;
+*)        BUILD_DIR="build/debug" ;;
+esac
+
+case "$MODE" in
 sanitize)
     echo -e "${BLUE}========================================${NC}"
     echo -e "${BLUE}   Running Test Suite with Sanitizers${NC}"
@@ -41,6 +48,8 @@ sanitize)
             -DCMAKE_BUILD_TYPE=Debug \
             -DENABLE_SANITIZERS=ON
     fi
+    export ASAN_OPTIONS=detect_leaks=1:abort_on_error=1
+    export UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1
     ;;
 release)
     echo -e "${BLUE}========================================${NC}"
@@ -143,12 +152,12 @@ if [ "$MODE" = "coverage" ]; then
     echo
     echo -e "${YELLOW}Generating HTML report...${NC}"
     genhtml "$BUILD_DIR/coverage.info" \
-        --output-directory "$BUILD_DIR/coverage" \
+        --output-directory "$BUILD_DIR/report" \
         --title "TinyKafka Coverage" \
         --legend
 
     echo
     COVERAGE_PCT=$(lcov --summary "$BUILD_DIR/coverage.info" 2>&1 | grep lines | awk '{print $2}' | tr -d '%')
-    echo -e "${GREEN}Coverage report generated:${NC} ${BUILD_DIR}/coverage/index.html"
+    echo -e "${GREEN}Coverage report generated:${NC} ${BUILD_DIR}/report/index.html"
     echo -e "${GREEN}Line coverage: ${COVERAGE_PCT}%${NC}"
 fi
