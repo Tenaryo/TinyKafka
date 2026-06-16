@@ -2,8 +2,8 @@
 
 #include "config/properties.hpp"
 
+#include "logging/logger.hpp"
 #include <charconv>
-#include <iostream>
 #include <string_view>
 
 namespace config {
@@ -36,8 +36,8 @@ void apply_config_key(Config& config, std::string_view key, std::string_view val
         if (parsed != 0) {
             config.port = parsed;
         } else {
-            std::cerr << "[config] invalid port value: " << value << ", using default "
-                      << config.port << '\n';
+            logging::warn("invalid port value: " + std::string(value) + ", using default " +
+                          std::to_string(config.port));
         }
     } else if (key == "log.dirs") {
         config.log_root = value;
@@ -46,8 +46,8 @@ void apply_config_key(Config& config, std::string_view key, std::string_view val
         if (parsed != 0) {
             config.max_message_bytes = parsed;
         } else {
-            std::cerr << "[config] invalid max.message.bytes value: " << value << ", using default "
-                      << config.max_message_bytes << '\n';
+            logging::warn("invalid max.message.bytes value: " + std::string(value) +
+                          ", using default " + std::to_string(config.max_message_bytes));
         }
     }
 }

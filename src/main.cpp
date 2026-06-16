@@ -1,5 +1,4 @@
 #include <cstdlib>
-#include <iostream>
 #include <thread>
 #include <unistd.h>
 #include <vector>
@@ -7,6 +6,7 @@
 #include "broker/broker.hpp"
 #include "cluster/metadata.hpp"
 #include "config/config.hpp"
+#include "logging/logger.hpp"
 #include "net/server.hpp"
 #include "net/socket.hpp"
 #include "protocol/parser.hpp"
@@ -22,16 +22,16 @@ int main(int argc, char** argv) {
 
     auto server = Server::create(config.port);
     if (!server) {
-        std::cerr << "Failed to start server: " << server.error().message() << '\n';
+        logging::error("Failed to start server: " + server.error().message());
         return EXIT_FAILURE;
     }
 
-    std::cout << "Waiting for clients to connect...\n";
+    logging::info("Waiting for clients to connect...");
 
     while (true) {
         auto client = server->accept();
         if (!client) {
-            std::cerr << "Accept failed: " << client.error().message() << '\n';
+            logging::error("Accept failed: " + client.error().message());
             continue;
         }
 
@@ -48,7 +48,7 @@ int main(int argc, char** argv) {
                 std::array<std::uint8_t, 4> len_buf{};
                 auto len_result = recv_all(client_fd, len_buf);
                 if (!len_result) {
-                    std::cerr << "Read error: " << len_result.error().message() << '\n';
+                    logging::error("Read error: " + len_result.error().message());
                     break;
                 }
                 if (*len_result == 0) {
@@ -58,7 +58,7 @@ int main(int argc, char** argv) {
                 auto message_length = static_cast<std::size_t>(
                     decode_int32_be(std::span<const std::uint8_t, 4>{len_buf}));
                 if (message_length > static_cast<std::size_t>(max_msg)) {
-                    std::cerr << "Message too large: " << message_length << '\n';
+                    logging::error("Message too large: " + std::to_string(message_length));
                     break;
                 }
 
@@ -70,7 +70,7 @@ int main(int argc, char** argv) {
 
                 auto req = parse_request(buf);
                 if (!req) {
-                    std::cerr << "Parse failed: " << req.error().message() << '\n';
+                    logging::error("Parse failed: " + req.error().message());
                     break;
                 }
 
@@ -79,13 +79,13 @@ int main(int argc, char** argv) {
 
                 auto send_result = send_all(client_fd, bytes);
                 if (!send_result) {
-                    std::cerr << "Send failed: " << send_result.error().message() << '\n';
+                    logging::error("Send failed: " + send_result.error().message());
                     break;
                 }
             }
 
             ::close(client_fd);
-            std::cout << "Client disconnected\n";
+            logging::info("Client disconnected");
         }).detach();
     }
 }

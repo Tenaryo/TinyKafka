@@ -3,14 +3,16 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
-#include <iostream>
 #include <string_view>
+
+#include "logging/logger.hpp"
 
 namespace config {
 namespace {
 
 auto trim(std::string_view sv) -> std::string_view {
-    const auto *start = std::ranges::find_if_not(sv, [](unsigned char c) { return std::isspace(c); });
+    const auto* start =
+        std::ranges::find_if_not(sv, [](unsigned char c) { return std::isspace(c); });
     if (start == sv.end()) {
         return {};
     }
@@ -26,7 +28,7 @@ auto trim(std::string_view sv) -> std::string_view {
 auto load_properties(const std::string& path) -> std::expected<Properties, std::error_code> {
     std::ifstream file(path);
     if (!file.is_open()) [[unlikely]] {
-        std::cerr << "[config] cannot open file: " << path << '\n';
+        logging::error("cannot open file: " + path);
         return std::unexpected(std::error_code(errno, std::generic_category()));
     }
 
