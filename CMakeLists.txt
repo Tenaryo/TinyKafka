@@ -61,5 +61,11 @@ if(BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
+option(ENABLE_CLANG_TIDY "Enable clang-tidy static analysis" OFF)
+if(ENABLE_CLANG_TIDY)
+    find_program(CLANG_TIDY_EXE clang-tidy REQUIRED)
+    set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE}")
+endif()
+
 include(GNUInstallDirs)
 install(TARGETS kafka RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
