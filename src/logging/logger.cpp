@@ -5,6 +5,7 @@
 #include <iostream>
 #include <mutex>
 #include <thread>
+#include <unistd.h>
 
 namespace logging {
 
@@ -32,10 +33,7 @@ auto current_timestamp() -> std::string {
                        ms);
 }
 
-auto thread_id_str() -> std::string {
-    auto id = std::hash<std::thread::id>{}(std::this_thread::get_id());
-    return std::to_string(id);
-}
+auto thread_id_str() -> std::string { return std::to_string(gettid()); }
 
 void write_log(std::string_view level, std::string_view msg, uint32_t request_id) {
     auto ts = current_timestamp();

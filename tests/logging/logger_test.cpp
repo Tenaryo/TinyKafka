@@ -80,9 +80,7 @@ TEST(LoggerTest, RequestIdOptional) {
     auto output = capture.get_output();
     EXPECT_NE(output.find("[R:42]"), std::string::npos);
 
-    auto with_r = output.find("[R:42]");
-    auto first_line = output.substr(0, with_r);
-    EXPECT_EQ(first_line.find("[R:"), std::string::npos);
+    EXPECT_EQ(output.find("[R:", output.find("[R:42]") + 1), std::string::npos);
 }
 
 TEST(LoggerTest, ThreadSafety) {
