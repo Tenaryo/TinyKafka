@@ -38,8 +38,3 @@ auto recv_all(int fd, std::span<uint8_t> buf) -> std::expected<size_t, std::erro
     }
     return received;
 }
-
-void set_nonblocking(int fd) {
-    auto flags = ::fcntl(fd, F_GETFL, 0);
-    ::fcntl(fd, F_SETFL, flags | O_NONBLOCK); // NOLINT(cppcoreguidelines-pro-type-vararg)
-}

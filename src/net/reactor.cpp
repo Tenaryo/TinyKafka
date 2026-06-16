@@ -18,7 +18,7 @@
 namespace net {
 
 EpollReactor::EpollReactor(const config::Config& config, ClusterMetadata metadata, int server_fd)
-    : epoll_fd_(::epoll_create1(0)), server_fd_(server_fd),
+    : epoll_fd_(::epoll_create1(EPOLL_CLOEXEC)), server_fd_(server_fd),
       broker_(std::move(metadata), config.log_root), max_message_bytes_(config.max_message_bytes) {
     if (epoll_fd_ < 0) [[unlikely]] {
         logging::error("epoll_create1 failed: " + std::to_string(errno));
@@ -115,6 +115,10 @@ void EpollReactor::handle_read(int fd) {
                 if (!result) {
                     break;
                 }
+                if (*result == 0) {
+                    close_connection(fd);
+                    return;
+                }
                 if (conn.read_buf.size() < 4) {
                     break;
                 }
@@ -137,6 +141,10 @@ void EpollReactor::handle_read(int fd) {
             conn.read_buf.resize(old_size + (result ? *result : 0));
             if (!result) {
                 break;
+            }
+            if (*result == 0) {
+                close_connection(fd);
+                return;
             }
             if (conn.read_buf.size() < total_needed) {
                 break;
@@ -172,8 +180,6 @@ void EpollReactor::handle_write(int fd) {
 
     if (result) {
         conn.write_offset += *result;
-    } else if (result.error().value() == EAGAIN || result.error().value() == EWOULDBLOCK) {
-        return;
     } else {
         close_connection(fd);
         return;
