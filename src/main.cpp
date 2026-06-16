@@ -13,9 +13,6 @@
 #include "util/endian.hpp"
 
 int main() {
-    std::cout << std::unitbuf;
-    std::cerr << std::unitbuf;
-
     constexpr std::string_view kLogRoot = "/tmp/kraft-combined-logs";
 
     auto metadata = parse_cluster_metadata_file(
