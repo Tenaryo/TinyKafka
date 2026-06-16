@@ -2,7 +2,7 @@
 set -euo pipefail
 
 BUILD_DIR="build"
-COVERAGE_MODE=false
+MODE="default"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -12,16 +12,52 @@ NC='\033[0m'
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --coverage) COVERAGE_MODE=true ;;
+        --coverage) MODE="coverage" ;;
+        --sanitize) MODE="sanitize" ;;
+        --release) MODE="release" ;;
         *)
             echo -e "${RED}Unknown option: $1${NC}"
+            echo "Usage: $0 [--coverage|--sanitize|--release]"
             exit 1
             ;;
     esac
     shift
 done
 
-if $COVERAGE_MODE; then
+case "$MODE" in
+sanitize)
+    echo -e "${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Running Test Suite with Sanitizers${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    echo
+
+    NEED_RECONFIGURE=true
+    if [ -f "$BUILD_DIR/CMakeCache.txt" ] && grep -q 'ENABLE_SANITIZERS:BOOL=ON' "$BUILD_DIR/CMakeCache.txt"; then
+        NEED_RECONFIGURE=false
+    fi
+    if $NEED_RECONFIGURE; then
+        echo -e "${YELLOW}Configuring CMake with sanitizers...${NC}"
+        cmake -B "$BUILD_DIR" -S . -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DENABLE_SANITIZERS=ON
+    fi
+    ;;
+release)
+    echo -e "${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Running Test Suite (Release)${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    echo
+
+    NEED_RECONFIGURE=true
+    if [ -f "$BUILD_DIR/CMakeCache.txt" ] && grep -q 'CMAKE_BUILD_TYPE.*=Release' "$BUILD_DIR/CMakeCache.txt"; then
+        NEED_RECONFIGURE=false
+    fi
+    if $NEED_RECONFIGURE; then
+        echo -e "${YELLOW}Configuring CMake (Release)...${NC}"
+        cmake -B "$BUILD_DIR" -S . -G Ninja -DCMAKE_BUILD_TYPE=Release
+    fi
+    ;;
+coverage)
     if ! command -v lcov >/dev/null 2>&1 || ! command -v genhtml >/dev/null 2>&1; then
         echo -e "${RED}lcov and genhtml are required. Install with: sudo apt install lcov${NC}"
         exit 1
@@ -48,7 +84,8 @@ if $COVERAGE_MODE; then
             -DCMAKE_BUILD_TYPE=Debug \
             -DENABLE_COVERAGE=ON
     fi
-else
+    ;;
+*)
     echo -e "${BLUE}========================================${NC}"
     echo -e "${BLUE}   Running Test Suite${NC}"
     echo -e "${BLUE}========================================${NC}"
@@ -59,13 +96,14 @@ else
         echo -e "${YELLOW}Configuring CMake...${NC}"
         cmake -B "$BUILD_DIR" -S . -G Ninja -DCMAKE_BUILD_TYPE=Debug
     fi
-fi
+    ;;
+esac
 
 echo -e "${YELLOW}Building tests...${NC}"
 cmake --build "$BUILD_DIR" -j$(nproc)
 echo
 
-if $COVERAGE_MODE; then
+if [ "$MODE" = "coverage" ]; then
     echo -e "${YELLOW}Cleaning stale coverage data...${NC}"
     find "$BUILD_DIR" -name '*.gcda' -delete 2>/dev/null || true
     echo
@@ -83,7 +121,7 @@ else
     exit 1
 fi
 
-if $COVERAGE_MODE; then
+if [ "$MODE" = "coverage" ]; then
     echo
     echo -e "${BLUE}========================================${NC}"
     echo -e "${BLUE}   Generating Coverage Report${NC}"
