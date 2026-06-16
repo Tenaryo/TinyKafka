@@ -1,8 +1,9 @@
+#include <cstring>
 #include <fstream>
 
 #include <gtest/gtest.h>
 
-#include "config/properties.hpp"
+#include "config/config.hpp"
 
 namespace {
 
@@ -12,68 +13,70 @@ void write_temp_file(const std::string& path, const std::string& content) {
     file.write(content.data(), static_cast<std::streamsize>(content.size()));
 }
 
+struct CliArgs {
+    std::vector<char*> ptrs;
+    std::vector<std::vector<char>> storage;
+
+    explicit CliArgs(std::initializer_list<std::string> args) {
+        storage.reserve(args.size());
+        for (const auto& arg : args) {
+            auto& buf = storage.emplace_back(arg.size() + 1, '\0');
+            std::memcpy(buf.data(), arg.data(), arg.size());
+            ptrs.push_back(buf.data());
+        }
+    }
+
+    auto argc() -> int { return static_cast<int>(ptrs.size()); }
+    auto argv() -> char** { return ptrs.data(); }
+};
+
 } // namespace
 
-TEST(PropertiesTest, BasicKeyValueParsing) {
-    const std::string path = "/tmp/test_basic.properties";
-    write_temp_file(path, "host=localhost\nport=9092\n");
-
-    auto result = config::load_properties(path);
-    ASSERT_TRUE(result.has_value());
-    const auto& props = *result;
-    EXPECT_EQ(props.at("host"), "localhost");
-    EXPECT_EQ(props.at("port"), "9092");
+TEST(ConfigTest, AllDefaults) {
+    CliArgs args({});
+    auto config = config::Config::load(args.argc(), args.argv(), "/nonexistent/path");
+    EXPECT_EQ(config.port, 9092);
+    EXPECT_EQ(config.log_root, "/tmp/kraft-combined-logs");
+    EXPECT_EQ(config.max_message_bytes, 1'048'576U);
 }
 
-TEST(PropertiesTest, CommentsAndEmptyLines) {
-    const std::string path = "/tmp/test_comments.properties";
-    write_temp_file(path,
-                    R"(# this is a comment
-key1=value1
+TEST(ConfigTest, LoadFromFile) {
+    const std::string path = "/tmp/test_config_file.properties";
+    write_temp_file(path, "port=1234\nlog.dirs=/data/logs\nmax.message.bytes=2097152\n");
 
-key2=value2
-# another comment
-key3=value3
-)");
-
-    auto result = config::load_properties(path);
-    ASSERT_TRUE(result.has_value());
-    const auto& props = *result;
-    EXPECT_EQ(props.size(), 3U);
-    EXPECT_EQ(props.at("key1"), "value1");
-    EXPECT_EQ(props.at("key2"), "value2");
-    EXPECT_EQ(props.at("key3"), "value3");
+    CliArgs args({});
+    auto config = config::Config::load(args.argc(), args.argv(), path);
+    EXPECT_EQ(config.port, 1234);
+    EXPECT_EQ(config.log_root, "/data/logs");
+    EXPECT_EQ(config.max_message_bytes, 2097152U);
 }
 
-TEST(PropertiesTest, FileNotFound) {
-    auto result = config::load_properties("/nonexistent/path/config.properties");
-    EXPECT_FALSE(result.has_value());
+TEST(ConfigTest, CliOverridesDefaults) {
+    CliArgs args({"--port=9093", "--log.dirs=/cli/path", "--max.message.bytes=65536"});
+    auto config = config::Config::load(args.argc(), args.argv(), "/nonexistent/path");
+    EXPECT_EQ(config.port, 9093);
+    EXPECT_EQ(config.log_root, "/cli/path");
+    EXPECT_EQ(config.max_message_bytes, 65536U);
 }
 
-TEST(PropertiesTest, WhitespaceTrimmingAndInternalPreservation) {
-    const std::string path = "/tmp/test_whitespace.properties";
-    write_temp_file(path,
-                    R"(  host  =  localhost  
-message = hello world
-)");
+TEST(ConfigTest, FileThenCliOverride) {
+    const std::string path = "/tmp/test_config_mix.properties";
+    write_temp_file(path, "port=1111\nlog.dirs=/file/path\n");
 
-    auto result = config::load_properties(path);
-    ASSERT_TRUE(result.has_value());
-    const auto& props = *result;
-    EXPECT_EQ(props.at("host"), "localhost");
-    EXPECT_EQ(props.at("message"), "hello world");
+    CliArgs args({"--port=2222"});
+    auto config = config::Config::load(args.argc(), args.argv(), path);
+    EXPECT_EQ(config.port, 2222);
+    EXPECT_EQ(config.log_root, "/file/path");
+    EXPECT_EQ(config.max_message_bytes, 1'048'576U);
 }
 
-TEST(PropertiesTest, EdgeCasesNoEqualsDuplicateKeyCrLf) {
-    const std::string path = "/tmp/test_edge.properties";
-    write_temp_file(path,
-                    "a=1\r\n"
-                    "orphan_line\r\n"
-                    "a=2\r\n");
+TEST(ConfigTest, UnknownKeyAndInvalidPort) {
+    const std::string path = "/tmp/test_config_edge.properties";
+    write_temp_file(path, "unknown.key=bar\nport=abc\n");
 
-    auto result = config::load_properties(path);
-    ASSERT_TRUE(result.has_value());
-    const auto& props = *result;
-    EXPECT_EQ(props.size(), 1U);
-    EXPECT_EQ(props.at("a"), "2");
+    CliArgs args({});
+    auto config = config::Config::load(args.argc(), args.argv(), path);
+    EXPECT_EQ(config.port, 9092);
+    EXPECT_EQ(config.log_root, "/tmp/kraft-combined-logs");
+    EXPECT_EQ(config.max_message_bytes, 1'048'576U);
 }

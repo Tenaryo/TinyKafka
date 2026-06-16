@@ -6,19 +6,21 @@
 
 #include "broker/broker.hpp"
 #include "cluster/metadata.hpp"
+#include "config/config.hpp"
 #include "net/server.hpp"
 #include "net/socket.hpp"
 #include "protocol/parser.hpp"
 #include "protocol/serializer.hpp"
 #include "util/endian.hpp"
 
-int main() {
-    constexpr std::string_view kLogRoot = "/tmp/kraft-combined-logs";
+// NOLINTNEXTLINE(bugprone-exception-escape)
+int main(int argc, char** argv) {
+    auto config = config::Config::load(argc, argv);
 
-    auto metadata = parse_cluster_metadata_file(
-        "/tmp/kraft-combined-logs/__cluster_metadata-0/00000000000000000000.log");
+    auto metadata = parse_cluster_metadata_file(config.log_root +
+                                                "/__cluster_metadata-0/00000000000000000000.log");
 
-    auto server = Server::create(9092);
+    auto server = Server::create(config.port);
     if (!server) {
         std::cerr << "Failed to start server: " << server.error().message() << '\n';
         return EXIT_FAILURE;
@@ -35,8 +37,11 @@ int main() {
 
         int client_fd = *client;
 
-        std::thread([client_fd, &metadata, kLogRoot] {
-            Broker broker(metadata, std::string(kLogRoot));
+        int max_msg = static_cast<int>(config.max_message_bytes);
+        std::string log_root_copy = config.log_root;
+
+        std::thread([client_fd, metadata, log_root_copy, max_msg] {
+            Broker broker(metadata, log_root_copy);
             std::vector<std::uint8_t> buf;
 
             while (true) {
@@ -52,7 +57,7 @@ int main() {
 
                 auto message_length = static_cast<std::size_t>(
                     decode_int32_be(std::span<const std::uint8_t, 4>{len_buf}));
-                if (message_length > 1'048'576) {
+                if (message_length > static_cast<std::size_t>(max_msg)) {
                     std::cerr << "Message too large: " << message_length << '\n';
                     break;
                 }

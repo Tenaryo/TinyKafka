@@ -3,6 +3,7 @@ set(TEST_SOURCES
     broker/broker_test.cpp
     cluster/metadata_test.cpp
     config/config_test.cpp
+    config/properties_test.cpp
     protocol/parser_test.cpp
     protocol/serializer_test.cpp
 )
