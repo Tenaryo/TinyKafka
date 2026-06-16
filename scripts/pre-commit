@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${SKIP_PRECOMMIT:-0}" == "1" ]]; then
+    exit 0
+fi
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+PROJECT_ROOT="$(git rev-parse --show-toplevel)"
+COMPILE_DB="${PROJECT_ROOT}/build/compile_commands.json"
+
+staged_files=$(git diff --cached --name-only --diff-filter=ACMR)
+
+cpp_files=()
+hpp_files=()
+while IFS= read -r f; do
+    if [[ "$f" == *.cpp ]]; then
+        cpp_files+=("$f")
+    elif [[ "$f" == *.hpp ]]; then
+        hpp_files+=("$f")
+    fi
+done <<< "$staged_files"
+
+all_relevant=("${cpp_files[@]}" "${hpp_files[@]}")
+if [[ ${#all_relevant[@]} -eq 0 ]]; then
+    exit 0
+fi
+
+echo -e "${YELLOW}[pre-commit] Running clang-format on ${#all_relevant[@]} staged file(s)...${NC}"
+
+fmt_failures=0
+for f in "${all_relevant[@]}"; do
+    abs_path="${PROJECT_ROOT}/${f}"
+    if [[ ! -f "$abs_path" ]]; then
+        continue
+    fi
+    clang-format -i --style=file "$abs_path"
+    if ! git diff --quiet -- "$f"; then
+        git add "$f"
+        echo -e "  ${GREEN}formatted${NC} ${f}"
+    fi
+done
+
+echo -e "${YELLOW}[pre-commit] Running clang-tidy...${NC}"
+
+if [[ ! -f "$COMPILE_DB" ]]; then
+    echo -e "${RED}[pre-commit] ERROR: compile_commands.json not found at ${COMPILE_DB}${NC}"
+    echo -e "${RED}  Please run ./build.sh first to generate it.${NC}"
+    exit 1
+fi
+
+tidy_failures=0
+for f in "${cpp_files[@]}"; do
+    abs_path="${PROJECT_ROOT}/${f}"
+    if [[ ! -f "$abs_path" ]]; then
+        continue
+    fi
+    if clang-tidy --use-color -p "$(dirname "$COMPILE_DB")" "$abs_path" 2>&1; then
+        echo -e "  ${GREEN}OK${NC} ${f}"
+    else
+        echo -e "  ${RED}FAIL${NC} ${f}"
+        ((tidy_failures++)) || true
+    fi
+done
+
+if [[ $tidy_failures -gt 0 ]]; then
+    echo
+    echo -e "${RED}[pre-commit] clang-tidy found issues in ${tidy_failures} file(s).${NC}"
+    echo -e "${RED}  Fix the diagnostics above before committing.${NC}"
+    echo -e "${RED}  To skip: SKIP_PRECOMMIT=1 git commit ...${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}[pre-commit] All checks passed.${NC}"
+exit 0

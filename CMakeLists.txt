@@ -88,3 +88,11 @@ endif()
 
 include(GNUInstallDirs)
 install(TARGETS kafka RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+add_custom_target(setup_precommit
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/scripts/pre-commit
+        ${CMAKE_SOURCE_DIR}/.git/hooks/pre-commit
+    COMMAND chmod +x ${CMAKE_SOURCE_DIR}/.git/hooks/pre-commit
+    COMMENT "Installing pre-commit hook (clang-format + clang-tidy)"
+)
