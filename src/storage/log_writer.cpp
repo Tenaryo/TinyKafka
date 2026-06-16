@@ -14,18 +14,21 @@ auto write_topic_log(std::string_view root_path,
     auto dir = std::format("{}/{}-{}", root_path, topic_name, partition);
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
-    if (ec)
+    if (ec) {
         return ec;
+    }
 
     auto path = std::format("{}/00000000000000000000.log", dir);
     std::ofstream file(path, std::ios::binary | std::ios::app);
-    if (!file)
-        return std::error_code(errno, std::generic_category());
+    if (!file) {
+        return {errno, std::generic_category()};
+    }
 
     file.write(reinterpret_cast<const char*>(records.data()),
                static_cast<std::streamsize>(records.size()));
-    if (!file)
-        return std::error_code(errno, std::generic_category());
+    if (!file) {
+        return {errno, std::generic_category()};
+    }
 
     return {};
 }

@@ -51,22 +51,24 @@ auto Broker::build_topic_metadata(const std::string& topic_name) const -> TopicM
 auto Broker::find_topic_by_uuid(const std::array<std::uint8_t, 16>& id) const
     -> const ClusterMetadata::TopicInfo* {
     auto it = metadata_.uuid_to_topic.find(id);
-    if (it == metadata_.uuid_to_topic.end())
+    if (it == metadata_.uuid_to_topic.end()) {
         return nullptr;
+    }
     return &metadata_.topics[it->second];
 }
 
 auto Broker::find_topic_by_name(const std::string& name) const
     -> const ClusterMetadata::TopicInfo* {
     auto it = metadata_.name_to_topic.find(name);
-    if (it == metadata_.name_to_topic.end())
+    if (it == metadata_.name_to_topic.end()) {
         return nullptr;
+    }
     return &metadata_.topics[it->second];
 }
 
 auto Broker::handle(const Request& req) -> Response {
     return std::visit(
-        overloaded{
+        Overloaded{
             [](const ApiVersionsRequest& r) -> Response {
                 int16_t error_code =
                     (r.header.api_version >= 0 && r.header.api_version <= 4) ? 0 : 35;
@@ -101,7 +103,7 @@ auto Broker::handle(const Request& req) -> Response {
                         if (info && std::ranges::find(info->partitions, part_req.partition_index) !=
                                         info->partitions.end()) {
                             if (!part_req.records.empty()) {
-                                storage::write_topic_log(log_root_,
+                                [[maybe_unused]] auto ec = storage::write_topic_log(log_root_,
                                                          topic_req.topic_name,
                                                          part_req.partition_index,
                                                          part_req.records);

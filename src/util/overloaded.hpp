@@ -1,5 +1,5 @@
 #pragma once
 
-template <typename... Ts> struct overloaded : Ts... {
+template <typename... Ts> struct Overloaded : Ts... {
     using Ts::operator()...;
 };

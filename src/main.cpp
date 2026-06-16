@@ -46,8 +46,9 @@ int main() {
                     std::cerr << "Read error: " << len_result.error().message() << '\n';
                     break;
                 }
-                if (*len_result == 0)
+                if (*len_result == 0) {
                     break;
+                }
 
                 auto message_length = static_cast<std::size_t>(
                     decode_int32_be(std::span<const std::uint8_t, 4>{len_buf}));

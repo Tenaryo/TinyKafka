@@ -8,8 +8,9 @@
 #include <system_error>
 
 constexpr auto varint_encoded_size(uint32_t value) noexcept -> size_t {
-    if (value == 0)
+    if (value == 0) {
         return 1;
+    }
     size_t size = 0;
     while (value > 0) {
         value >>= 7;

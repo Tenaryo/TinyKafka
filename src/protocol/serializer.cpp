@@ -32,7 +32,7 @@ size_t partition_entry_size(const PartitionMetadata& p) {
 
 auto serialize(const Response& resp) -> std::vector<std::uint8_t> {
     return std::visit(
-        overloaded{
+        Overloaded{
             [](const ApiVersionsResponse& r) -> std::vector<std::uint8_t> {
                 const uint32_t count = static_cast<uint32_t>(r.api_keys.size()) + 1;
                 const size_t varint_len = varint_encoded_size(count);

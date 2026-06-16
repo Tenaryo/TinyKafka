@@ -42,7 +42,7 @@ Server::~Server() {
     }
 }
 
-auto Server::accept() -> std::expected<int, std::error_code> {
+auto Server::accept() const -> std::expected<int, std::error_code> {
     sockaddr_in client_addr{};
     socklen_t client_addr_len = sizeof(client_addr);
 

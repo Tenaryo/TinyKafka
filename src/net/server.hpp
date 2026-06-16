@@ -28,7 +28,7 @@ class Server {
         return *this;
     }
 
-    auto accept() -> std::expected<int, std::error_code>;
+    [[nodiscard]] auto accept() const -> std::expected<int, std::error_code>;
   private:
     explicit Server(int fd) : server_fd_(fd) {}
     int server_fd_;
