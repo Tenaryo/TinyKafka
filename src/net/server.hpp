@@ -29,6 +29,14 @@ class Server {
     }
 
     [[nodiscard]] auto accept() const -> std::expected<int, std::error_code>;
+
+    [[nodiscard]] auto server_fd() const -> int { return server_fd_; }
+
+    auto take_fd() -> int {
+        int fd = server_fd_;
+        server_fd_ = -1;
+        return fd;
+    }
   private:
     explicit Server(int fd) : server_fd_(fd) {}
     int server_fd_;

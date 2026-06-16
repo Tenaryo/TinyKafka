@@ -10,6 +10,7 @@ add_library(TinyKafka_core STATIC
     src/config/config.cpp
     src/config/properties.cpp
     src/logging/logger.cpp
+    src/net/reactor.cpp
     src/net/server.cpp
     src/net/socket.cpp
     src/protocol/parser.cpp
@@ -19,6 +20,7 @@ add_library(TinyKafka_core STATIC
 )
 target_include_directories(TinyKafka_core PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_compile_features(TinyKafka_core PUBLIC cxx_std_23)
+target_compile_definitions(TinyKafka_core PUBLIC _GNU_SOURCE)
 target_compile_options(TinyKafka_core PRIVATE
     -Wall -Wextra -Wpedantic -Werror -Wshadow -Wconversion
     $<$<CONFIG:Debug>:-g -O0>
