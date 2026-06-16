@@ -1,5 +1,7 @@
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -88,6 +90,54 @@ auto make_record(const std::vector<uint8_t>& value) -> std::vector<uint8_t> {
     record.insert(record.end(), value.begin(), value.end());
     push_signed_varint(0);
     return record;
+}
+
+auto build_record_batch_raw(const std::vector<std::vector<uint8_t>>& records)
+    -> std::vector<uint8_t> {
+    std::vector<uint8_t> buf;
+    auto push_be32 = [&](int32_t val) {
+        buf.push_back(static_cast<uint8_t>((val >> 24) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((val >> 16) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((val >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(val & 0xFF));
+    };
+    auto push_be64 = [&](int64_t val) {
+        for (int i = 7; i >= 0; --i) {
+            buf.push_back(static_cast<uint8_t>((val >> (i * 8)) & 0xFF));
+        }
+    };
+    auto push_be16 = [&](int16_t val) {
+        buf.push_back(static_cast<uint8_t>((val >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(val & 0xFF));
+    };
+    push_be64(0);
+    size_t batch_len_pos = buf.size();
+    push_be32(0);
+    push_be32(0);
+    buf.push_back(0x02);
+    push_be32(0);
+    push_be16(0);
+    push_be32(static_cast<int32_t>(records.size()) - 1);
+    push_be64(0);
+    push_be64(0);
+    push_be64(0);
+    push_be16(0);
+    push_be32(0);
+    push_be32(static_cast<int32_t>(records.size()));
+
+    std::vector<uint8_t> all_records;
+    for (const auto& rec : records) {
+        all_records.insert(all_records.end(), rec.begin(), rec.end());
+    }
+    buf.insert(buf.end(), all_records.begin(), all_records.end());
+
+    int32_t batch_len = static_cast<int32_t>(buf.size() - batch_len_pos - 4);
+    buf[batch_len_pos] = static_cast<uint8_t>((batch_len >> 24) & 0xFF);
+    buf[batch_len_pos + 1] = static_cast<uint8_t>((batch_len >> 16) & 0xFF);
+    buf[batch_len_pos + 2] = static_cast<uint8_t>((batch_len >> 8) & 0xFF);
+    buf[batch_len_pos + 3] = static_cast<uint8_t>(batch_len & 0xFF);
+
+    return buf;
 }
 
 auto build_record_batch(const std::vector<std::vector<uint8_t>>& record_values)
@@ -294,4 +344,108 @@ TEST(MetadataTest, UuidToNameLookupRoundTrip) {
     EXPECT_EQ(b_by_uuid->second, b_by_name->second);
 
     EXPECT_NE(a_by_name->second, b_by_name->second);
+}
+
+auto make_record_with_headers(const std::vector<uint8_t>& value,
+                              const std::vector<std::pair<std::string, std::string>>& headers)
+    -> std::vector<uint8_t> {
+    std::vector<uint8_t> record;
+    auto push_signed_varint = [&](int32_t val) {
+        uint32_t encoded = zigzag_encode(val);
+        while (encoded > 0x7F) {
+            record.push_back(static_cast<uint8_t>((encoded & 0x7F) | 0x80));
+            encoded >>= 7;
+        }
+        record.push_back(static_cast<uint8_t>(encoded & 0x7F));
+    };
+    std::vector<uint8_t> header_bytes;
+    auto push_signed_varint_to_header = [&](int32_t val) {
+        uint32_t encoded = zigzag_encode(val);
+        while (encoded > 0x7F) {
+            header_bytes.push_back(static_cast<uint8_t>((encoded & 0x7F) | 0x80));
+            encoded >>= 7;
+        }
+        header_bytes.push_back(static_cast<uint8_t>(encoded & 0x7F));
+    };
+    push_signed_varint_to_header(static_cast<int32_t>(headers.size()));
+    for (const auto& [key, val] : headers) {
+        push_signed_varint_to_header(static_cast<int32_t>(key.size()));
+        for (char c : key) {
+            header_bytes.push_back(static_cast<uint8_t>(c));
+        }
+        push_signed_varint_to_header(static_cast<int32_t>(val.size()));
+        for (char c : val) {
+            header_bytes.push_back(static_cast<uint8_t>(c));
+        }
+    }
+    uint32_t body_size =
+        1 + 1 + 1 + 1 + 0 + 1 + static_cast<uint32_t>(value.size()) +
+        static_cast<uint32_t>(header_bytes.size());
+    push_signed_varint(static_cast<int32_t>(body_size));
+    record.push_back(0x00);
+    push_signed_varint(0);
+    push_signed_varint(0);
+    push_signed_varint(-1);
+    push_signed_varint(static_cast<int32_t>(value.size()));
+    record.insert(record.end(), value.begin(), value.end());
+    record.insert(record.end(), header_bytes.begin(), header_bytes.end());
+    return record;
+}
+
+TEST(MetadataTest, RecordBatchWithHeaders) {
+    constexpr std::array<uint8_t, 16> uuid = {
+        0xa1, 0xb2, 0xc3, 0xd4, 0xe5, 0xf6, 0xa7, 0xb8,
+        0xc9, 0xd0, 0xe1, 0xf2, 0xa3, 0xb4, 0xc5, 0xd6,
+    };
+    auto topic_val = make_topic_record_value("foo", uuid);
+    auto record = make_record_with_headers(topic_val, {{"hdr-key", "hdr-value"}});
+    auto batch = build_record_batch_raw({record});
+    auto result = parse_cluster_metadata(batch);
+    ASSERT_TRUE(result.has_value());
+    ASSERT_EQ(result->topics.size(), 1u);
+    EXPECT_EQ(result->topics[0].name, "foo");
+}
+
+TEST(MetadataTest, ParseClusterMetadataFileNotFound) {
+    auto meta = parse_cluster_metadata_file("/nonexistent/path/metadata.log");
+    EXPECT_TRUE(meta.topics.empty());
+}
+
+TEST(MetadataTest, ParseClusterMetadataFileEmpty) {
+    auto tmpdir = std::filesystem::temp_directory_path();
+    auto path = tmpdir / "tinykafka_empty_metadata.log";
+    {
+        std::ofstream f(path, std::ios::binary);
+        f.close();
+    }
+    auto meta = parse_cluster_metadata_file(path);
+    EXPECT_TRUE(meta.topics.empty());
+    std::filesystem::remove(path);
+}
+
+TEST(MetadataTest, ParseClusterMetadataFileValid) {
+    constexpr std::array<uint8_t, 16> uuid = {
+        0xa1, 0xb2, 0xc3, 0xd4, 0xe5, 0xf6, 0xa7, 0xb8,
+        0xc9, 0xd0, 0xe1, 0xf2, 0xa3, 0xb4, 0xc5, 0xd6,
+    };
+    auto topic_val = make_topic_record_value("bar", uuid);
+    auto partition_val = make_partition_record_value(0, uuid);
+    auto batch = build_record_batch({topic_val, partition_val});
+
+    auto tmpdir = std::filesystem::temp_directory_path();
+    auto path = tmpdir / "tinykafka_valid_metadata.log";
+    {
+        std::ofstream f(path, std::ios::binary);
+        f.write(reinterpret_cast<const char*>(batch.data()),
+                static_cast<std::streamsize>(batch.size()));
+    }
+
+    auto meta = parse_cluster_metadata_file(path);
+    ASSERT_EQ(meta.topics.size(), 1u);
+    EXPECT_EQ(meta.topics[0].name, "bar");
+    EXPECT_EQ(meta.topics[0].uuid, uuid);
+    ASSERT_EQ(meta.topics[0].partitions.size(), 1u);
+    EXPECT_EQ(meta.topics[0].partitions[0], 0);
+
+    std::filesystem::remove(path);
 }

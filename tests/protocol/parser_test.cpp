@@ -441,3 +441,212 @@ TEST(ParserTest, ParsesProduceV11RequestWithRecords) {
     EXPECT_EQ(req->topics[0].partitions[0].records[1], 0xCD);
     EXPECT_EQ(req->topics[0].partitions[0].records[2], 0xEF);
 }
+
+TEST(ParserTest, RejectsUnknownApiKeyDefaultBranch) {
+    std::vector<std::uint8_t> buf;
+    auto push_be16 = [&](int16_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto push_be32 = [&](int32_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    push_be16(99);
+    push_be16(0);
+    push_be32(0);
+    auto result = parse_request(buf);
+    EXPECT_FALSE(result.has_value());
+}
+
+TEST(ParserTest, ParsesDescribeTopicPartitionsWithCursor) {
+    std::vector<std::uint8_t> buf;
+    auto push_be16 = [&](int16_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto push_be32 = [&](int32_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    push_be16(75);
+    push_be16(0);
+    push_be32(7);
+    buf.push_back(0xFF);
+    buf.push_back(0xFF);
+    buf.push_back(0x00);
+    buf.push_back(0x02);
+    buf.push_back(0x04);
+    buf.push_back('f');
+    buf.push_back('o');
+    buf.push_back('o');
+    buf.push_back(0x00);
+    push_be32(0x64);
+    buf.push_back(0x00);
+    buf.push_back(0x06);
+    buf.push_back('c');
+    buf.push_back('u');
+    buf.push_back('r');
+    buf.push_back('s');
+    buf.push_back('o');
+    buf.push_back('r');
+    push_be32(5);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    auto result = parse_request(buf);
+    ASSERT_TRUE(result.has_value());
+    auto req = std::get_if<DescribeTopicPartitionsRequest>(&*result);
+    ASSERT_NE(req, nullptr);
+    EXPECT_EQ(req->topic_names.size(), 1u);
+    EXPECT_EQ(req->topic_names[0], "foo");
+}
+
+TEST(ParserTest, ParsesDescribeTopicPartitionsWithClientId) {
+    std::vector<std::uint8_t> buf;
+    auto push_be16 = [&](int16_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto push_be32 = [&](int32_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    push_be16(75);
+    push_be16(0);
+    push_be32(7);
+    push_be16(5);
+    buf.push_back('h');
+    buf.push_back('e');
+    buf.push_back('l');
+    buf.push_back('l');
+    buf.push_back('o');
+    buf.push_back(0x00);
+    buf.push_back(0x01);
+    push_be32(0x64);
+    buf.push_back(0xFF);
+    buf.push_back(0x00);
+    auto result = parse_request(buf);
+    ASSERT_TRUE(result.has_value());
+    auto req = std::get_if<DescribeTopicPartitionsRequest>(&*result);
+    ASSERT_NE(req, nullptr);
+    EXPECT_TRUE(req->topic_names.empty());
+}
+
+TEST(ParserTest, ParsesFetchV16WithForgottenTopicsAndRack) {
+    constexpr std::array<uint8_t, 16> test_uuid = {
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+    };
+    std::vector<std::uint8_t> buf;
+    auto push_be16 = [&](int16_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto push_be32 = [&](int32_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto push_be64 = [&](int64_t v) {
+        for (int i = 7; i >= 0; --i)
+            buf.push_back(static_cast<uint8_t>((v >> (i * 8)) & 0xFF));
+    };
+    push_be16(1);
+    push_be16(16);
+    push_be32(42);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    push_be32(500);
+    push_be32(1);
+    push_be32(0x00100000);
+    buf.push_back(0x00);
+    push_be32(0);
+    push_be32(0);
+    buf.push_back(0x02);
+    buf.insert(buf.end(), test_uuid.begin(), test_uuid.end());
+    buf.push_back(0x02);
+    push_be32(0);
+    push_be32(-1);
+    push_be64(0);
+    push_be32(-1);
+    push_be64(-1);
+    push_be32(0x00100000);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x02);
+    buf.insert(buf.end(), test_uuid.begin(), test_uuid.end());
+    buf.push_back(0x02);
+    push_be32(0);
+    push_be32(0);
+    push_be32(0);
+    push_be32(0);
+    buf.push_back(0x00);
+    buf.push_back(0x04);
+    buf.push_back('r');
+    buf.push_back('a');
+    buf.push_back('c');
+    buf.push_back('k');
+    buf.push_back(0x00);
+    auto result = parse_request(buf);
+    ASSERT_TRUE(result.has_value());
+    auto req = std::get_if<FetchRequest>(&*result);
+    ASSERT_NE(req, nullptr);
+    EXPECT_EQ(req->header.correlation_id, 42);
+}
+
+TEST(ParserTest, ParsesProduceV11WithClientIdAndTxId) {
+    std::vector<std::uint8_t> buf;
+    auto push_be16 = [&](int16_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto push_be32 = [&](int32_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    push_be16(0);
+    push_be16(11);
+    push_be32(42);
+    push_be16(4);
+    buf.push_back('t');
+    buf.push_back('e');
+    buf.push_back('s');
+    buf.push_back('t');
+    buf.push_back(0x00);
+    buf.push_back(0x06);
+    buf.push_back('t');
+    buf.push_back('x');
+    buf.push_back('n');
+    buf.push_back('-');
+    buf.push_back('1');
+    push_be16(1);
+    push_be32(5000);
+    buf.push_back(0x02);
+    buf.push_back(0x04);
+    buf.push_back('f');
+    buf.push_back('o');
+    buf.push_back('o');
+    buf.push_back(0x02);
+    push_be32(0);
+    buf.push_back(0x01);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+    auto result = parse_request(buf);
+    ASSERT_TRUE(result.has_value());
+    auto req = std::get_if<ProduceRequest>(&*result);
+    ASSERT_NE(req, nullptr);
+    EXPECT_EQ(req->header.correlation_id, 42);
+    ASSERT_EQ(req->topics.size(), 1u);
+    EXPECT_EQ(req->topics[0].topic_name, "foo");
+}
