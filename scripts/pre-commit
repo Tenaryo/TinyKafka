@@ -38,8 +38,10 @@ for f in "${all_relevant[@]}"; do
     if [[ ! -f "$abs_path" ]]; then
         continue
     fi
-    clang-format -i --style=file "$abs_path"
-    if ! git diff --quiet -- "$f"; then
+    staged_content=$(git show ":$f")
+    formatted=$(echo "$staged_content" | clang-format --style=file --assume-filename="$f")
+    if [[ "$formatted" != "$staged_content" ]]; then
+        echo "$formatted" > "$abs_path"
         git add "$f"
         echo -e "  ${GREEN}formatted${NC} ${f}"
     fi
@@ -63,7 +65,7 @@ for f in "${cpp_files[@]}"; do
         echo -e "  ${GREEN}OK${NC} ${f}"
     else
         echo -e "  ${RED}FAIL${NC} ${f}"
-        ((tidy_failures++)) || true
+        tidy_failures=$((tidy_failures + 1))
     fi
 done
 
