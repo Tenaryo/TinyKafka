@@ -344,7 +344,7 @@ This builds the project with `--coverage`, runs all 54 tests via ctest, and gene
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENABLE_COVERAGE=ON
 cmake --build build
 cmake --build build --target test    # run tests without lcov
-lcov --capture --directory build --gcov-tool gcov-14 --output-file build/coverage.info
+lcov --capture --directory build --output-file build/coverage.info
 lcov --remove build/coverage.info '/usr/*' '*/_deps/*' --output-file build/coverage.info
 genhtml build/coverage.info --output-directory build/coverage
 ```

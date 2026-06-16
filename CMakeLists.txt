@@ -37,6 +37,10 @@ endif()
 option(ENABLE_COVERAGE "Enable code coverage instrumentation (GCC)" OFF)
 
 if(ENABLE_COVERAGE)
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        message(WARNING "ENABLE_COVERAGE uses GCC's --coverage flag. "
+                        "For Clang, use ENABLE_COVERAGE=OFF and llvm-cov instead.")
+    endif()
     if(ENABLE_SANITIZERS)
         message(FATAL_ERROR "ENABLE_COVERAGE and ENABLE_SANITIZERS are mutually exclusive")
     endif()

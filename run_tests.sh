@@ -10,20 +10,44 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-if [[ "${1:-}" == "--coverage" ]]; then
-    COVERAGE_MODE=true
-fi
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --coverage) COVERAGE_MODE=true ;;
+        *)
+            echo -e "${RED}Unknown option: $1${NC}"
+            exit 1
+            ;;
+    esac
+    shift
+done
 
 if $COVERAGE_MODE; then
+    if ! command -v lcov >/dev/null 2>&1 || ! command -v genhtml >/dev/null 2>&1; then
+        echo -e "${RED}lcov and genhtml are required. Install with: sudo apt install lcov${NC}"
+        exit 1
+    fi
+
+    GCOV_TOOL="gcov"
+    GCC_VER=$(c++ -dumpversion | cut -d. -f1)
+    if command -v "gcov-${GCC_VER}" >/dev/null 2>&1; then
+        GCOV_TOOL="gcov-${GCC_VER}"
+    fi
+
     echo -e "${BLUE}========================================${NC}"
     echo -e "${BLUE}   Running Test Suite with Coverage${NC}"
     echo -e "${BLUE}========================================${NC}"
     echo
 
-    echo -e "${YELLOW}Configuring CMake with coverage...${NC}"
-    cmake -B "$BUILD_DIR" -S . -G Ninja \
-        -DCMAKE_BUILD_TYPE=Debug \
-        -DENABLE_COVERAGE=ON
+    NEED_RECONFIGURE=true
+    if [ -f "$BUILD_DIR/CMakeCache.txt" ] && grep -q 'ENABLE_COVERAGE:BOOL=ON' "$BUILD_DIR/CMakeCache.txt"; then
+        NEED_RECONFIGURE=false
+    fi
+    if $NEED_RECONFIGURE; then
+        echo -e "${YELLOW}Configuring CMake with coverage...${NC}"
+        cmake -B "$BUILD_DIR" -S . -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DENABLE_COVERAGE=ON
+    fi
 else
     echo -e "${BLUE}========================================${NC}"
     echo -e "${BLUE}   Running Test Suite${NC}"
@@ -66,18 +90,16 @@ if $COVERAGE_MODE; then
     echo -e "${BLUE}========================================${NC}"
     echo
 
-    echo -e "${YELLOW}Capturing coverage data with lcov...${NC}"
+    echo -e "${YELLOW}Capturing coverage data with lcov (${GCOV_TOOL})...${NC}"
     lcov --capture \
         --directory "$BUILD_DIR" \
         --output-file "$BUILD_DIR/coverage_raw.info" \
-        --gcov-tool gcov-14
+        --gcov-tool "$GCOV_TOOL"
 
     echo -e "${YELLOW}Filtering project sources...${NC}"
     lcov --remove "$BUILD_DIR/coverage_raw.info" \
         '/usr/*' \
         '*/_deps/*' \
-        '*/gtest/*' \
-        '*/gmock/*' \
         --output-file "$BUILD_DIR/coverage.info"
 
     echo
