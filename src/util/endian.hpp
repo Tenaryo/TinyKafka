@@ -27,7 +27,7 @@ constexpr void write_int64_be(int64_t value, std::span<std::uint8_t, 8> out) noe
 }
 
 constexpr auto decode_int16_be(std::span<const std::uint8_t, 2> data) noexcept -> int16_t {
-    return (static_cast<int16_t>(data[0]) << 8) | static_cast<int16_t>(data[1]);
+    return static_cast<int16_t>((static_cast<int16_t>(data[0]) << 8) | static_cast<int16_t>(data[1]));
 }
 
 constexpr auto decode_int32_be(std::span<const std::uint8_t, 4> data) noexcept -> int32_t {

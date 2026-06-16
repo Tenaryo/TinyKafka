@@ -294,7 +294,7 @@ TEST(IntegrationTest, ServerHandlesApiVersionsValidVersion) {
     EXPECT_EQ(echoed_correlation_id, kTestCorrelationId);
 
     int16_t error_code =
-        (static_cast<int16_t>(response[8]) << 8) | static_cast<int16_t>(response[9]);
+        static_cast<int16_t>((static_cast<int16_t>(response[8]) << 8) | static_cast<int16_t>(response[9]));
     EXPECT_EQ(error_code, 0);
     EXPECT_EQ(response[10], 0x05); // compact array length = 4 (varint: 4+1)
     EXPECT_EQ(response[11], 0x00);
@@ -365,7 +365,7 @@ TEST(IntegrationTest, ServerHandlesMultipleRequestsSameConnection) {
                              (static_cast<int32_t>(body[2]) << 8) | static_cast<int32_t>(body[3]);
         EXPECT_EQ(echoed_cid, cid) << "Correlation ID mismatch";
 
-        int16_t error_code = (static_cast<int16_t>(body[4]) << 8) | static_cast<int16_t>(body[5]);
+        int16_t error_code = static_cast<int16_t>((static_cast<int16_t>(body[4]) << 8) | static_cast<int16_t>(body[5]));
         EXPECT_EQ(error_code, 0) << "Error code should be 0";
     }
 
@@ -381,7 +381,7 @@ void verify_api_versions_response(int32_t expected_correlation_id,
                          (static_cast<int32_t>(body[2]) << 8) | static_cast<int32_t>(body[3]);
     EXPECT_EQ(echoed_cid, expected_correlation_id) << "Correlation ID mismatch";
 
-    int16_t error_code = (static_cast<int16_t>(body[4]) << 8) | static_cast<int16_t>(body[5]);
+    int16_t error_code = static_cast<int16_t>((static_cast<int16_t>(body[4]) << 8) | static_cast<int16_t>(body[5]));
     EXPECT_EQ(error_code, 0) << "Error code should be 0";
 
     size_t offset = 6;
@@ -397,11 +397,11 @@ void verify_api_versions_response(int32_t expected_correlation_id,
     for (uint32_t i = 0; i < entry_count; ++i) {
         ASSERT_LE(offset + 7, body.size()) << "Truncated api key entry";
         int16_t api_key =
-            (static_cast<int16_t>(body[offset]) << 8) | static_cast<int16_t>(body[offset + 1]);
+            static_cast<int16_t>((static_cast<int16_t>(body[offset]) << 8) | static_cast<int16_t>(body[offset + 1]));
         int16_t min_ver =
-            (static_cast<int16_t>(body[offset + 2]) << 8) | static_cast<int16_t>(body[offset + 3]);
+            static_cast<int16_t>((static_cast<int16_t>(body[offset + 2]) << 8) | static_cast<int16_t>(body[offset + 3]));
         int16_t max_ver =
-            (static_cast<int16_t>(body[offset + 4]) << 8) | static_cast<int16_t>(body[offset + 5]);
+            static_cast<int16_t>((static_cast<int16_t>(body[offset + 4]) << 8) | static_cast<int16_t>(body[offset + 5]));
         if (api_key == 18) {
             found_api18 = true;
             EXPECT_EQ(min_ver, 0) << "MinVersion for ApiKey 18 must be 0";
@@ -477,7 +477,7 @@ TEST(IntegrationTest, ServerHandlesApiVersionsUnsupportedVersion) {
     EXPECT_EQ(echoed_correlation_id, kTestCorrelationId);
 
     int16_t error_code =
-        (static_cast<int16_t>(response[8]) << 8) | static_cast<int16_t>(response[9]);
+        static_cast<int16_t>((static_cast<int16_t>(response[8]) << 8) | static_cast<int16_t>(response[9]));
     EXPECT_EQ(error_code, 35);
 }
 
@@ -680,7 +680,7 @@ TEST(IntegrationTest, ApiVersionsResponseContainsFetchApiEntry) {
                          (static_cast<int32_t>(body[2]) << 8) | static_cast<int32_t>(body[3]);
     EXPECT_EQ(echoed_cid, kTestCorrelationId) << "Correlation ID mismatch";
 
-    int16_t error_code = (static_cast<int16_t>(body[4]) << 8) | static_cast<int16_t>(body[5]);
+    int16_t error_code = static_cast<int16_t>((static_cast<int16_t>(body[4]) << 8) | static_cast<int16_t>(body[5]));
     EXPECT_EQ(error_code, 0) << "Error code should be 0";
 
     size_t offset = 6;
@@ -696,11 +696,11 @@ TEST(IntegrationTest, ApiVersionsResponseContainsFetchApiEntry) {
     for (uint32_t i = 0; i < entry_count; ++i) {
         ASSERT_LE(offset + 7, body.size()) << "Truncated api key entry";
         int16_t api_key =
-            (static_cast<int16_t>(body[offset]) << 8) | static_cast<int16_t>(body[offset + 1]);
+            static_cast<int16_t>((static_cast<int16_t>(body[offset]) << 8) | static_cast<int16_t>(body[offset + 1]));
         int16_t min_ver =
-            (static_cast<int16_t>(body[offset + 2]) << 8) | static_cast<int16_t>(body[offset + 3]);
+            static_cast<int16_t>((static_cast<int16_t>(body[offset + 2]) << 8) | static_cast<int16_t>(body[offset + 3]));
         int16_t max_ver =
-            (static_cast<int16_t>(body[offset + 4]) << 8) | static_cast<int16_t>(body[offset + 5]);
+            static_cast<int16_t>((static_cast<int16_t>(body[offset + 4]) << 8) | static_cast<int16_t>(body[offset + 5]));
         if (api_key == 1) {
             found_fetch = true;
             EXPECT_EQ(min_ver, 0) << "MinVersion for Fetch must be 0";
@@ -926,7 +926,7 @@ TEST(IntegrationTest, FetchResponseReturnsRecordBatchFromDisk) {
                        (static_cast<int32_t>(body[7]) << 8) | static_cast<int32_t>(body[8]);
     EXPECT_EQ(throttle, 0);
 
-    int16_t error_code = (static_cast<int16_t>(body[9]) << 8) | static_cast<int16_t>(body[10]);
+    int16_t error_code = static_cast<int16_t>((static_cast<int16_t>(body[9]) << 8) | static_cast<int16_t>(body[10]));
     EXPECT_EQ(error_code, 0);
 
     EXPECT_EQ(body[11], 0x00);
@@ -956,7 +956,7 @@ TEST(IntegrationTest, FetchResponseReturnsRecordBatchFromDisk) {
     EXPECT_EQ(part_idx, 0);
     off += 4;
 
-    int16_t part_err = (static_cast<int16_t>(body[off]) << 8) | static_cast<int16_t>(body[off + 1]);
+    int16_t part_err = static_cast<int16_t>((static_cast<int16_t>(body[off]) << 8) | static_cast<int16_t>(body[off + 1]));
     EXPECT_EQ(part_err, 0);
     off += 2;
 
@@ -1120,7 +1120,7 @@ TEST(IntegrationTest, ProduceRequestPersistsRecordBatchToDisk) {
     EXPECT_EQ(part_idx, 0) << "Partition index must be 0";
     off += 4;
 
-    int16_t part_err = (static_cast<int16_t>(body[off]) << 8) | static_cast<int16_t>(body[off + 1]);
+    int16_t part_err = static_cast<int16_t>((static_cast<int16_t>(body[off]) << 8) | static_cast<int16_t>(body[off + 1]));
     EXPECT_EQ(part_err, 0) << "Error code must be 0 (NO_ERROR)";
     off += 2;
 

@@ -30,8 +30,8 @@ target_link_libraries(kafka PRIVATE TinyKafka_core)
 option(ENABLE_SANITIZERS "Enable Address and Undefined Behavior Sanitizers" OFF)
 
 if(ENABLE_SANITIZERS)
-    target_compile_options(TinyKafka_core INTERFACE -fsanitize=address,undefined -fno-omit-frame-pointer)
-    target_link_options(TinyKafka_core INTERFACE -fsanitize=address,undefined)
+    target_compile_options(TinyKafka_core PUBLIC -fsanitize=address,undefined -fno-omit-frame-pointer)
+    target_link_options(TinyKafka_core PUBLIC -fsanitize=address,undefined)
 endif()
 
 option(ENABLE_COVERAGE "Enable code coverage instrumentation (GCC)" OFF)
