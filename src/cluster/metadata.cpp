@@ -110,7 +110,7 @@ auto parse_cluster_metadata(std::span<const uint8_t> data) noexcept
             if (!value_len)
                 continue;
             if (*value_len < 3) {
-                auto header_count = reader.read_signed_varint();
+                [[maybe_unused]] auto hc = reader.read_signed_varint();
                 continue;
             }
 
@@ -121,7 +121,7 @@ auto parse_cluster_metadata(std::span<const uint8_t> data) noexcept
 
             auto val_span = *value_bytes;
             if (val_span.size() < 3) {
-                auto header_count = reader.read_signed_varint();
+                [[maybe_unused]] auto hc = reader.read_signed_varint();
                 continue;
             }
 
