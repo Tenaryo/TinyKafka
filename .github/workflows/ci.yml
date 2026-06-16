@@ -50,6 +50,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build cmake ${{ matrix.compiler }}
+          if [[ "${{ matrix.compiler }}" == clang++* ]]; then
+            sudo apt-get install -y libc++-18-dev libc++abi-18-dev libunwind-18-dev
+          fi
 
       - name: Configure CMake
         run: |
@@ -57,11 +60,16 @@ jobs:
           if ${{ matrix.sanitize }}; then
             SANITIZE_FLAG="-DENABLE_SANITIZERS=ON"
           fi
+          CLANG_FLAGS=""
+          if [[ "${{ matrix.compiler }}" == clang++* ]]; then
+            CLANG_FLAGS="-DCMAKE_CXX_FLAGS=-stdlib=libc++ -DCMAKE_EXE_LINKER_FLAGS=-lc++abi"
+          fi
           cmake -B build -S . -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
             -DCMAKE_CXX_COMPILER=${{ matrix.compiler }} \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-            $SANITIZE_FLAG
+            $SANITIZE_FLAG \
+            $CLANG_FLAGS
 
       - name: Build
         run: cmake --build build -j $(nproc)

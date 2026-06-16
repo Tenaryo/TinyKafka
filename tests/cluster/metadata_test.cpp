@@ -378,9 +378,8 @@ auto make_record_with_headers(const std::vector<uint8_t>& value,
             header_bytes.push_back(static_cast<uint8_t>(c));
         }
     }
-    uint32_t body_size =
-        1 + 1 + 1 + 1 + 0 + 1 + static_cast<uint32_t>(value.size()) +
-        static_cast<uint32_t>(header_bytes.size());
+    uint32_t body_size = 1 + 1 + 1 + 1 + 0 + 1 + static_cast<uint32_t>(value.size()) +
+                         static_cast<uint32_t>(header_bytes.size());
     push_signed_varint(static_cast<int32_t>(body_size));
     record.push_back(0x00);
     push_signed_varint(0);
@@ -394,8 +393,22 @@ auto make_record_with_headers(const std::vector<uint8_t>& value,
 
 TEST(MetadataTest, RecordBatchWithHeaders) {
     constexpr std::array<uint8_t, 16> uuid = {
-        0xa1, 0xb2, 0xc3, 0xd4, 0xe5, 0xf6, 0xa7, 0xb8,
-        0xc9, 0xd0, 0xe1, 0xf2, 0xa3, 0xb4, 0xc5, 0xd6,
+        0xa1,
+        0xb2,
+        0xc3,
+        0xd4,
+        0xe5,
+        0xf6,
+        0xa7,
+        0xb8,
+        0xc9,
+        0xd0,
+        0xe1,
+        0xf2,
+        0xa3,
+        0xb4,
+        0xc5,
+        0xd6,
     };
     auto topic_val = make_topic_record_value("foo", uuid);
     auto record = make_record_with_headers(topic_val, {{"hdr-key", "hdr-value"}});
@@ -425,8 +438,22 @@ TEST(MetadataTest, ParseClusterMetadataFileEmpty) {
 
 TEST(MetadataTest, ParseClusterMetadataFileValid) {
     constexpr std::array<uint8_t, 16> uuid = {
-        0xa1, 0xb2, 0xc3, 0xd4, 0xe5, 0xf6, 0xa7, 0xb8,
-        0xc9, 0xd0, 0xe1, 0xf2, 0xa3, 0xb4, 0xc5, 0xd6,
+        0xa1,
+        0xb2,
+        0xc3,
+        0xd4,
+        0xe5,
+        0xf6,
+        0xa7,
+        0xb8,
+        0xc9,
+        0xd0,
+        0xe1,
+        0xf2,
+        0xa3,
+        0xb4,
+        0xc5,
+        0xd6,
     };
     auto topic_val = make_topic_record_value("bar", uuid);
     auto partition_val = make_partition_record_value(0, uuid);
