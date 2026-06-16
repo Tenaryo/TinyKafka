@@ -80,6 +80,99 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
 
+  coverage:
+    name: Coverage (GCC 14)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake g++-14 lcov bc
+
+      - name: Configure CMake
+        run: |
+          cmake -B build/coverage -S . -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_COMPILER=g++-14 \
+            -DENABLE_COVERAGE=ON
+
+      - name: Build
+        run: cmake --build build/coverage -j $(nproc)
+
+      - name: Run tests
+        run: ctest --test-dir build/coverage --output-on-failure -j $(nproc)
+
+      - name: Collect coverage
+        run: |
+          lcov --capture \
+            --directory build/coverage \
+            --output-file build/coverage/coverage_raw.info \
+            --gcov-tool gcov-14
+          lcov --remove build/coverage/coverage_raw.info \
+            '/usr/*' \
+            '*/_deps/*' \
+            --output-file build/coverage/coverage.info
+
+      - name: Check coverage threshold
+        run: |
+          COVERAGE_PCT=$(lcov --summary build/coverage/coverage.info 2>&1 | grep lines | awk '{print $2}' | tr -d '%')
+          echo "Line coverage: ${COVERAGE_PCT}%"
+          if [ "$(echo "${COVERAGE_PCT} < 80" | bc)" -eq 1 ]; then
+            echo "Coverage ${COVERAGE_PCT}% is below 80% threshold!"
+            exit 1
+          fi
+
+  clang-tidy:
+    name: clang-tidy Check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake clang++-18 clang-tidy-18 libc++-18-dev libc++abi-18-dev libunwind-18-dev
+
+      - name: Configure CMake
+        run: |
+          cmake -B build/clang-tidy -S . -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_COMPILER=clang++-18 \
+            -DCMAKE_CXX_CLANG_TIDY="clang-tidy-18;--warnings-as-errors=*" \
+            -DCMAKE_CXX_FLAGS="-stdlib=libc++" \
+            -DCMAKE_EXE_LINKER_FLAGS="-lc++abi"
+
+      - name: Build
+        run: cmake --build build/clang-tidy -j $(nproc)
+
+  tsan:
+    name: TSan (GCC 14)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake g++-14
+
+      - name: Configure CMake
+        run: |
+          cmake -B build/tsan -S . -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_COMPILER=g++-14 \
+            -DENABLE_TSAN=ON
+
+      - name: Build
+        run: cmake --build build/tsan -j $(nproc)
+
+      - name: Run tests
+        run: ctest --test-dir build/tsan --output-on-failure -j $(nproc)
+        env:
+          TSAN_OPTIONS: halt_on_error=1:abort_on_error=1
+
   format-check:
     name: clang-format Check
     runs-on: ubuntu-24.04
