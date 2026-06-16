@@ -2,6 +2,7 @@ set(TEST_SOURCES
     integration_test.cpp
     broker/broker_test.cpp
     cluster/metadata_test.cpp
+    config/config_test.cpp
     protocol/parser_test.cpp
     protocol/serializer_test.cpp
 )
