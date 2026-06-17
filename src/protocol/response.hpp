@@ -110,8 +110,27 @@ struct MetadataResponse {
     int32_t cluster_authorized_operations;
 };
 
+struct ListOffsetsPartitionResponse {
+    int32_t partition_index = 0;
+    int16_t error_code = 0;
+    int64_t offset = -1;
+    int64_t timestamp = -1;
+};
+
+struct ListOffsetsTopicResponse {
+    std::string topic_name;
+    std::vector<ListOffsetsPartitionResponse> partitions;
+};
+
+struct ListOffsetsResponse {
+    int32_t correlation_id;
+    int32_t throttle_time_ms;
+    std::vector<ListOffsetsTopicResponse> topics;
+};
+
 using Response = std::variant<ApiVersionsResponse,
                               DescribeTopicPartitionsResponse,
                               FetchResponse,
+                              ListOffsetsResponse,
                               MetadataResponse,
                               ProduceResponse>;

@@ -46,6 +46,15 @@ class ByteReader {
         return val;
     }
 
+    constexpr auto read_int64() noexcept -> std::expected<int64_t, std::error_code> {
+        if (remaining() < 8) {
+            return std::unexpected(make_error_code(std::errc::message_size));
+        }
+        auto val = decode_int64_be(std::span<const uint8_t, 8>{data_.data() + offset_, 8});
+        offset_ += 8;
+        return val;
+    }
+
     constexpr auto
     read_bytes(size_t n) noexcept -> std::expected<std::span<const uint8_t>, std::error_code> {
         if (remaining() < n) {

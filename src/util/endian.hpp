@@ -35,3 +35,10 @@ constexpr auto decode_int32_be(std::span<const std::uint8_t, 4> data) noexcept -
     return (static_cast<int32_t>(data[0]) << 24) | (static_cast<int32_t>(data[1]) << 16) |
            (static_cast<int32_t>(data[2]) << 8) | static_cast<int32_t>(data[3]);
 }
+
+constexpr auto decode_int64_be(std::span<const std::uint8_t, 8> data) noexcept -> int64_t {
+    return (static_cast<int64_t>(data[0]) << 56) | (static_cast<int64_t>(data[1]) << 48) |
+           (static_cast<int64_t>(data[2]) << 40) | (static_cast<int64_t>(data[3]) << 32) |
+           (static_cast<int64_t>(data[4]) << 24) | (static_cast<int64_t>(data[5]) << 16) |
+           (static_cast<int64_t>(data[6]) << 8) | static_cast<int64_t>(data[7]);
+}

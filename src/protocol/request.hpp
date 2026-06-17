@@ -57,8 +57,26 @@ struct MetadataRequest {
     bool allow_auto_topic_creation = false;
 };
 
+struct ListOffsetsPartitionRequest {
+    int32_t partition_index = 0;
+    int64_t timestamp = 0;
+};
+
+struct ListOffsetsTopicRequest {
+    std::string topic_name;
+    std::vector<ListOffsetsPartitionRequest> partitions;
+};
+
+struct ListOffsetsRequest {
+    RequestHeader header;
+    int32_t replica_id = -1;
+    int8_t isolation_level = 0;
+    std::vector<ListOffsetsTopicRequest> topics;
+};
+
 using Request = std::variant<ApiVersionsRequest,
                              DescribeTopicPartitionsRequest,
                              FetchRequest,
+                             ListOffsetsRequest,
                              MetadataRequest,
                              ProduceRequest>;

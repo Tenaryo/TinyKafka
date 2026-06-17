@@ -980,3 +980,68 @@ TEST(BrokerTest, HandlesMetadataRequestEmptyTopicsReturnsAll) {
     ASSERT_EQ(r->topics.size(), 1u);
     EXPECT_EQ(r->topics[0].topic_name, "orders");
 }
+
+TEST(BrokerTest, HandlesListOffsetsEarliestLatest) {
+    constexpr TopicId topic_uuid = {
+        0xa1,
+        0xb2,
+        0xc3,
+        0xd4,
+        0xe5,
+        0xf6,
+        0xa7,
+        0xb8,
+        0xc9,
+        0xd0,
+        0xe1,
+        0xf2,
+        0xa3,
+        0xb4,
+        0xc5,
+        0xd6,
+    };
+
+    auto tmp_dir = make_tmp_log_dir();
+    auto meta = make_meta_with_topic("orders", topic_uuid, {0});
+    Broker broker(std::move(meta), tmp_dir);
+
+    {
+        RequestHeader header{0, 11, 100};
+        ProduceRequest req{header,
+                           {{.topic_name = "orders",
+                             .partitions = {{.partition_index = 0, .records = {0x01, 0x02}}}}}};
+        broker.handle(req);
+    }
+
+    {
+        RequestHeader header{2, 0, 200};
+        ListOffsetsRequest req{
+            header,
+            -1,
+            0,
+            {{.topic_name = "orders", .partitions = {{.partition_index = 0, .timestamp = -1}}}}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<ListOffsetsResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        ASSERT_EQ(r->topics.size(), 1u);
+        ASSERT_EQ(r->topics[0].partitions.size(), 1u);
+        EXPECT_EQ(r->topics[0].partitions[0].error_code, 0);
+        EXPECT_EQ(r->topics[0].partitions[0].offset, 1);
+    }
+
+    {
+        RequestHeader header{2, 0, 300};
+        ListOffsetsRequest req{
+            header,
+            -1,
+            0,
+            {{.topic_name = "orders", .partitions = {{.partition_index = 0, .timestamp = -2}}}}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<ListOffsetsResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->topics[0].partitions[0].error_code, 0);
+        EXPECT_EQ(r->topics[0].partitions[0].offset, 0);
+    }
+
+    std::filesystem::remove_all(tmp_dir);
+}

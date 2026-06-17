@@ -122,6 +122,44 @@ auto Broker::handle(const Request& req) -> Response {
                     .cluster_authorized_operations = 0,
                 };
             },
+            [this](const ListOffsetsRequest& r) -> Response {
+                std::vector<ListOffsetsTopicResponse> topic_responses;
+                topic_responses.reserve(r.topics.size());
+                for (const auto& topic_req : r.topics) {
+                    const auto* info = find_topic_by_name(topic_req.topic_name);
+                    std::vector<ListOffsetsPartitionResponse> parts;
+                    parts.reserve(topic_req.partitions.size());
+                    for (const auto& part_req : topic_req.partitions) {
+                        int16_t error_code = 0;
+                        int64_t offset = -1;
+                        if (info && std::ranges::find(info->partitions, part_req.partition_index) !=
+                                        info->partitions.end()) {
+                            if (part_req.timestamp == -2) {
+                                offset = 0;
+                            } else if (part_req.timestamp == -1) {
+                                auto& ctx = get_or_create_context(topic_req.topic_name,
+                                                                  part_req.partition_index);
+                                offset = ctx.current_offset();
+                            } else {
+                                error_code = -1;
+                            }
+                        } else {
+                            error_code = 3;
+                        }
+                        parts.push_back({.partition_index = part_req.partition_index,
+                                         .error_code = error_code,
+                                         .offset = offset,
+                                         .timestamp = -1});
+                    }
+                    topic_responses.push_back(
+                        {.topic_name = topic_req.topic_name, .partitions = std::move(parts)});
+                }
+                return ListOffsetsResponse{
+                    .correlation_id = r.header.correlation_id,
+                    .throttle_time_ms = 0,
+                    .topics = std::move(topic_responses),
+                };
+            },
             [this](const DescribeTopicPartitionsRequest& r) -> Response {
                 std::vector<TopicMetadata> topics;
                 topics.reserve(r.topic_names.size());

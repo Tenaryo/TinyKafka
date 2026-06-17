@@ -32,6 +32,11 @@ class PartitionContext {
         std::lock_guard lock(mutex_);
         return storage::read_topic_log(log_root_, topic_name_, partition_);
     }
+
+    [[nodiscard]] auto current_offset() const -> int64_t {
+        std::lock_guard lock(mutex_);
+        return next_offset_;
+    }
   private:
     std::string log_root_;
     std::string topic_name_;
