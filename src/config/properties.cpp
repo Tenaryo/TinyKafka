@@ -25,10 +25,10 @@ auto trim(std::string_view sv) -> std::string_view {
 
 } // namespace
 
-auto load_properties(const std::string& path) -> std::expected<Properties, std::error_code> {
-    std::ifstream file(path);
+auto load_properties(std::string_view path) -> std::expected<Properties, std::error_code> {
+    std::ifstream file(std::string{path});
     if (!file.is_open()) [[unlikely]] {
-        logging::error("cannot open file: " + path);
+        logging::error("cannot open file: " + std::string{path});
         return std::unexpected(std::error_code(errno, std::generic_category()));
     }
 

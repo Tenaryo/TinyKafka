@@ -24,14 +24,14 @@
 TinyKafka 已具备的基础能力：
 - KRaft 元数据解析（topic/partition 发现）
 - 4 个 Kafka API：ApiVersions (18)、DescribeTopicPartitions (75)、Produce (0)、Fetch (1)
-- 简单的 TCP 网络层（每连接一线程）
+- epoll I/O 多路复用网络层（替换原 thread-per-connection）
 - 磁盘持久化存储（全量追加 + 全量读取）
 - 零外部依赖（C++23 STL + POSIX sockets）
 - 现有测试 ~3,200 LOC，通过 GoogleTest + fork-exec 集成测试
 
 ## Milestone 计划
 
-### M1: 工程质量基线
+### M1: 工程质量基线 ✅ 已完成
 
 **主题概述：** 为整个开发周期建立可验证的工程质量保障体系——覆盖率门禁、多编译器 CI 矩阵、静态分析、配置系统和结构化日志。此阶段不修改运行时行为，仅在工程基础设施层面加固。
 
@@ -39,14 +39,14 @@ TinyKafka 已具备的基础能力：
 
 | # | 功能需求 | 描述 | 价值 | 可行性 | 依赖 |
 |---|---------|------|------|--------|------|
-| F1 | 代码覆盖率体系 | 集成 gcov/lcov 或 llvm-cov，CMake target 一键生成 HTML 覆盖率报告 | P0 | 低风险 | 无 |
-| F2 | 覆盖率门槛 | CI 中强制行覆盖率 ≥80%，不达标则 pipeline 失败 | P0 | 低风险 | F1 |
-| F3 | CI/CD 矩阵完善 | GCC 14 + Clang 18，Debug/Release，ASan+UBSan+TSan 组合矩阵 | P1 | 低风险 | 无 |
-| F4 | 静态分析集成 | clang-tidy 集成 CMake target，CI 中强制零告警 | P1 | 低风险 | 无 |
-| F5 | 配置文件加载 | 支持 Kafka 风格的 properties 文件（key=value），替换硬编码 | P1 | 低风险 | 无 |
-| F6 | 核心配置项 | port、log.dirs、thread 数量、buffer 大小等可配置 | P1 | 低风险 | F5 |
-| F7 | CLI 参数覆盖 | 命令行参数可覆盖配置文件中的任意值 | P1 | 低风险 | F5 |
-| F8 | 结构化日志 | 分级日志（DEBUG/INFO/WARN/ERROR），含时间戳、线程 ID、请求 ID | P1 | 低风险 | 无 |
+| F1 | 代码覆盖率体系 | 集成 gcov/lcov 或 llvm-cov，CMake target 一键生成 HTML 覆盖率报告 | P0 | 低风险 | 无 | ✅ 已完成 |
+| F2 | 覆盖率门槛 | CI 中强制行覆盖率 ≥80%，不达标则 pipeline 失败 | P0 | 低风险 | F1 | ✅ 已完成 |
+| F3 | CI/CD 矩阵完善 | GCC 14 + Clang 18，Debug/Release，ASan+UBSan+TSan 组合矩阵 | P1 | 低风险 | 无 | ✅ 已完成 |
+| F4 | 静态分析集成 | clang-tidy 集成 CMake target，CI 中强制零告警 | P1 | 低风险 | 无 | ✅ 已完成 |
+| F5 | 配置文件加载 | 支持 Kafka 风格的 properties 文件（key=value），替换硬编码 | P1 | 低风险 | 无 | ✅ 已完成 |
+| F6 | 类型化 Config 模块 + CLI 覆盖 | 提供带默认值的类型化 Config 结构体，从 properties 文件构建；命令行 `--key=value` 可覆盖任意字段；消除 main.cpp 中所有硬编码 | P1 | 低风险 | F5 | ✅ 已完成 |
+| F7 | 结构化日志 | 分级日志（DEBUG/INFO/WARN/ERROR），含时间戳、线程 ID、请求 ID | P1 | 低风险 | 无 | ✅ 已完成 |
+| F8 | Pre-commit Hook | 提交前自动运行 clang-format 格式化 + clang-tidy 检查（仅 staged 文件），阻止不规范代码提交 | P1 | 低风险 | 无 | ✅ 已完成 |
 
 **高风险项：** 无
 
@@ -68,7 +68,7 @@ TinyKafka 已具备的基础能力：
 
 | # | 功能需求 | 描述 | 价值 | 可行性 | 依赖 |
 |---|---------|------|------|--------|------|
-| F9 | epoll I/O 多路复用 | 替换 accept + detach 模式为 epoll 事件循环管理所有连接的可读/可写就绪 | P0 | 低风险 | M1 |
+| F9 | epoll I/O 多路复用 | 替换 accept + detach 模式为 epoll 事件循环管理所有连接的可读/可写就绪 | P0 | 低风险 | M1 | ✅ 已完成 |
 | F10 | Partition 执行上下文 | 每个 partition 有独立的请求队列和在途请求状态；同一 partition 的写操作天然串行化，消除锁竞争 | P0 | 中风险 | M1 |
 | F11 | 请求路由 | 根据请求的 api_key、topic、partition 将请求分发到对应 partition 上下文 | P0 | 低风险 | F9, F10 |
 | F12 | 连接生命周期管理 | 完整的 accept / read / write / close 流程，包含背压控制（连接级 send buffer 满时暂停读取） | P0 | 低风险 | F9 |
@@ -188,6 +188,31 @@ TinyKafka 已具备的基础能力：
 
 ---
 
+### M6: io_uring + 协程 I/O 引擎升级
+
+**主题概述：** 在 M5 拿到 epoll 架构下的完整 benchmark 基线后，将 I/O 引擎从 epoll 替换为 io_uring，并用 C++20 协程重构异步代码为同步风格。io_uring 通过 submission/completion queue 共享内存环形缓冲实现批量 I/O、零拷贝、极低 syscall 开销；协程在此基础上用 `co_await` 消除回调，使 I/O 密集代码读起来像同步逻辑。这一刀切入时机在 benchmark 对比之后——epoll 数据是基线，io_uring 数据是亮点。
+
+**功能需求清单：**
+
+| # | 功能需求 | 描述 | 价值 | 可行性 | 依赖 |
+|---|---------|------|------|--------|------|
+| F47 | io_uring 事件循环 | 用 io_uring 替换 epoll：multishot accept、read/write 批量提交和收割、fixed buffer 复用消除每请求内存分配 | P1 | 中风险 | M5 |
+| F48 | C++20 协程集成 | 在 io_uring 之上封装 `co_await`-able 的 I/O 原语（`co_await accept()`、`co_await recv()`、`co_await send()`），使请求处理逻辑变为同步风格 | P1 | 中风险 | F47 |
+| F49 | io_uring 性能对比 | 同一 benchmark workload 对比 epoll vs io_uring+协程 的吞吐和延迟，产出第二份对比报告 | P1 | 低风险 | F48 |
+
+**高风险项：**
+- **F47**：io_uring 的 sqe/cqe 生命周期管理——sqe 提交后不可再修改、cqe 收割后需正确释放、fixed buffer 注册和注销与生命周期耦合。多线程下 io_uring 的 `IORING_SETUP_ATTACH_WQ` 等高级特性需要仔细设计。
+- **F48**：协程的 `promise_type` 和 `awaiter` 体系与 io_uring 的完成通知机制对接——需要在 cqe 收割循环中唤醒挂起的协程，TODO 工程量大。
+
+**Done criteria：**
+1. 同一 benchmark workload 下 io_uring 吞吐不低于 epoll 基线
+2. 协程版本代码行数不显著增加，可读性不低于 epoll 回调版本
+3. 全项目行覆盖率 ≥80%
+
+**依赖：** M5（需 M5 的完整 benchmark 数据和基础设施就绪后启动）
+
+---
+
 ## 已砍掉/推迟的需求
 
 | 需求 | 原定价值 | 砍掉/推迟原因 | 可能的回头时机 |
@@ -235,5 +260,15 @@ TinyKafka 已具备的基础能力：
 
 | 日期 | 版本 | 变更说明 | 发起人 |
 |------|------|---------|--------|
-| 2026-06-16 | v1.0 | 初始一期路线图，共 5 个 Milestone 46 项功能需求 | Strategist |
-
+| 2026-06-16 | v1.0 | 初始一期路线图，共 6 个 Milestone 49 项功能需求 | Strategist |
+| 2026-06-16 | v1.0 | M1 F1（代码覆盖率体系）标记为已完成，当前行覆盖率 92.8% | Reviewer |
+| 2026-06-16 | v1.0 | M1 F2/F3/F4（覆盖率门槛 + TSan + clang-tidy CI 门禁）标记为已完成，当前行覆盖率 94.9% | Reviewer |
+| 2026-06-16 | v1.0 | M1 新增 F9（Pre-commit Hook：format + clang-tidy），插入 F5 之前 | Reviewer |
+| 2026-06-16 | v1.0 | M1 F9（Pre-commit Hook）标记为已完成 | Reviewer |
+| 2026-06-16 | v1.0 | M1 F5（配置文件加载）标记为已完成 | Reviewer |
+| 2026-06-16 | v1.0 | M1 F6+F7 合并为「类型化 Config 模块 + CLI 覆盖」，原 F8（结构化日志）重编号为 F7 | Reviewer |
+| 2026-06-16 | v1.0 | M1 F6（类型化 Config 模块 + CLI 覆盖）标记为已完成 | Reviewer |
+| 2026-06-16 | v1.0 | M1 F7（结构化日志）标记为已完成，M1 工程质量基线全部完成 | Reviewer |
+| 2026-06-16 | v1.0 | 新增 M6（io_uring + 协程 I/O 引擎升级），在 M5 benchmark 基线后执行，含 F47/F48/F49 | Reviewer |
+| 2026-06-17 | v1.0 | 从 docs/roadmap_v1.md 同步至根目录 roadmap.md；M2 F9（epoll I/O 多路复用）标记为已完成 — EpollReactor (reactor.cpp/hpp, 255 LOC) 已实现非阻塞 accept/read/write 事件循环 | Reviewer |
+| 2026-06-17 | v1.0 | 更新「当前状态」中网络层描述，从 thread-per-connection 改为 epoll I/O 多路复用 | Reviewer |

@@ -43,3 +43,6 @@ coverage/
 # Benchmark
 benchmark/build/
 benchmark/results/
+
+# Worktrees
+.worktree/

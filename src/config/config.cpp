@@ -58,7 +58,7 @@ auto Config::load(int argc, char** argv, std::string_view config_path) -> Config
     Config config;
 
     if (!config_path.empty()) {
-        auto props = load_properties(std::string{config_path});
+        auto props = load_properties(config_path);
         if (props) {
             for (const auto& [key, value] : *props) {
                 apply_config_key(config, key, value);
