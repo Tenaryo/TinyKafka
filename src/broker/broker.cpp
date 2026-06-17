@@ -185,11 +185,14 @@ auto Broker::handle(const Request& req) -> Response {
                                         info->partitions.end()) {
                             int16_t error_code = 0;
                             int64_t base_offset = 0;
+                            int64_t log_append_time_ms = -1;
                             int64_t log_start_offset = 0;
                             if (!part_req.records.empty()) {
                                 auto& ctx = get_or_create_context(topic_req.topic_name,
                                                                   part_req.partition_index);
-                                base_offset = ctx.produce(part_req.records);
+                                auto result = ctx.produce(part_req.records);
+                                base_offset = result.base_offset;
+                                log_append_time_ms = result.log_append_time_ms;
                                 if (base_offset < 0) {
                                     error_code = 56;
                                     log_start_offset = -1;
@@ -199,7 +202,7 @@ auto Broker::handle(const Request& req) -> Response {
                                 .partition_index = part_req.partition_index,
                                 .error_code = error_code,
                                 .base_offset = base_offset,
-                                .log_append_time_ms = -1,
+                                .log_append_time_ms = log_append_time_ms,
                                 .log_start_offset = log_start_offset,
                             });
                         } else {

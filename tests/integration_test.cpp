@@ -1175,7 +1175,7 @@ TEST(IntegrationTest, ProduceRequestPersistsRecordBatchToDisk) {
         (static_cast<int64_t>(body[off + 2]) << 40) | (static_cast<int64_t>(body[off + 3]) << 32) |
         (static_cast<int64_t>(body[off + 4]) << 24) | (static_cast<int64_t>(body[off + 5]) << 16) |
         (static_cast<int64_t>(body[off + 6]) << 8) | static_cast<int64_t>(body[off + 7]);
-    EXPECT_EQ(log_append_time, -1) << "log_append_time_ms must be -1";
+    EXPECT_GT(log_append_time, 0) << "log_append_time_ms must be positive";
     off += 8;
 
     int64_t log_start =

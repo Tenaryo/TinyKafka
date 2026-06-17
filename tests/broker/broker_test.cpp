@@ -658,7 +658,7 @@ TEST(BrokerTest, HandlesProduceRequestWritesToDisk) {
     EXPECT_EQ(r->responses[0].partitions[0].partition_index, 0);
     EXPECT_EQ(r->responses[0].partitions[0].error_code, 0);
     EXPECT_EQ(r->responses[0].partitions[0].base_offset, 0);
-    EXPECT_EQ(r->responses[0].partitions[0].log_append_time_ms, -1);
+    EXPECT_GT(r->responses[0].partitions[0].log_append_time_ms, 0);
     EXPECT_EQ(r->responses[0].partitions[0].log_start_offset, 0);
 
     auto log_path = tmp_dir + "/orders-0/00000000000000000000.log";
