@@ -30,7 +30,7 @@ class PartitionContext {
     std::string topic_name_;
     int32_t partition_;
     int64_t next_offset_{0};
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
 };
 
 } // namespace broker

@@ -1,10 +1,12 @@
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <latch>
 #include <thread>
+#include <unistd.h>
 
 #include "broker/broker.hpp"
 #include "cluster/metadata.hpp"
@@ -26,8 +28,9 @@ auto make_meta_with_topic(std::string name,
 }
 
 auto make_tmp_log_dir() -> std::string {
-    auto path =
-        std::filesystem::temp_directory_path() / ("tinytk_test_" + std::to_string(std::rand()));
+    static std::atomic<int> counter{0};
+    auto path = std::filesystem::temp_directory_path() /
+                ("tinytk_test_" + std::to_string(getpid()) + "_" + std::to_string(++counter));
     std::filesystem::create_directories(path);
     return path.string();
 }

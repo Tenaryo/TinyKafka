@@ -22,6 +22,8 @@ class Broker {
     [[nodiscard]] auto
     find_topic_by_name(const std::string& name) const -> const ClusterMetadata::TopicInfo*;
 
+    // Returns a stable reference; PartitionContext entries are never removed,
+    // so the reference remains valid after contexts_mutex_ is released.
     auto get_or_create_context(const std::string& topic_name,
                                int32_t partition) -> broker::PartitionContext&;
 
