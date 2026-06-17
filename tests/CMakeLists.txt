@@ -1,6 +1,7 @@
 set(TEST_SOURCES
     integration_test.cpp
     broker/broker_test.cpp
+    broker/metrics_test.cpp
     cluster/metadata_test.cpp
     config/config_test.cpp
     config/properties_test.cpp

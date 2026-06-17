@@ -2,6 +2,8 @@
 
 #include <array>
 #include <cerrno>
+#include <chrono>
+#include <format>
 
 #include <fcntl.h>
 #include <sys/epoll.h>
@@ -20,7 +22,8 @@ namespace net {
 EpollReactor::EpollReactor(const config::Config& config, ClusterMetadata metadata, int server_fd)
     : epoll_fd_(::epoll_create1(EPOLL_CLOEXEC)), server_fd_(server_fd),
       broker_(std::move(metadata), config.log_root), max_message_bytes_(config.max_message_bytes),
-      max_write_buffer_bytes_(config.max_write_buffer_bytes) {
+      max_write_buffer_bytes_(config.max_write_buffer_bytes),
+      last_metrics_log_(std::chrono::steady_clock::now()) {
     if (epoll_fd_ < 0) [[unlikely]] {
         logging::error("epoll_create1 failed: " + std::to_string(errno));
         return;
@@ -66,6 +69,7 @@ void EpollReactor::run() {
             if (fd == server_fd_) {
                 handle_accept();
             } else if ((evts & (EPOLLERR | EPOLLHUP)) != 0) {
+                metrics_.errors_total.fetch_add(1, std::memory_order_relaxed);
                 close_connection(fd);
             } else {
                 if ((evts & EPOLLIN) != 0) {
@@ -75,6 +79,12 @@ void EpollReactor::run() {
                     handle_write(fd);
                 }
             }
+        }
+
+        auto now = std::chrono::steady_clock::now();
+        if (now - last_metrics_log_ >= kMetricsInterval) {
+            log_metrics();
+            last_metrics_log_ = now;
         }
     }
 }
@@ -131,6 +141,7 @@ void EpollReactor::handle_read(int fd) {
                 decode_int32_be(std::span<const uint8_t, 4>{conn.read_buf.data(), 4}));
             if (conn.expected_len > max_message_bytes_) {
                 logging::error("Message too large: " + std::to_string(conn.expected_len));
+                metrics_.errors_total.fetch_add(1, std::memory_order_relaxed);
                 close_connection(fd);
                 return;
             }
@@ -159,6 +170,7 @@ void EpollReactor::handle_read(int fd) {
         auto req = parse_request(body_span);
         if (!req) {
             logging::error("Parse failed: " + req.error().message());
+            metrics_.errors_total.fetch_add(1, std::memory_order_relaxed);
             close_connection(fd);
             return;
         }
@@ -168,9 +180,13 @@ void EpollReactor::handle_read(int fd) {
         if (conn.write_buf.size() > max_write_buffer_bytes_) [[unlikely]] {
             logging::error("Response exceeds max_write_buffer_bytes (fd=" + std::to_string(fd) +
                            ", size=" + std::to_string(conn.write_buf.size()) + ")");
+            metrics_.errors_total.fetch_add(1, std::memory_order_relaxed);
             close_connection(fd);
             return;
         }
+
+        metrics_.requests_total.fetch_add(1, std::memory_order_relaxed);
+        metrics_.bytes_received.fetch_add(total_needed, std::memory_order_relaxed);
         conn.write_offset = 0;
         conn.have_header = false;
         conn.read_buf.clear();
@@ -190,7 +206,9 @@ void EpollReactor::handle_write(int fd) {
 
     if (result) {
         conn.write_offset += *result;
+        metrics_.bytes_sent.fetch_add(*result, std::memory_order_relaxed);
     } else {
+        metrics_.errors_total.fetch_add(1, std::memory_order_relaxed);
         close_connection(fd);
         return;
     }
@@ -210,6 +228,22 @@ void EpollReactor::close_connection(int fd) {
     ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
     ::close(fd);
     connections_.erase(fd);
+}
+
+auto EpollReactor::snapshot() const -> broker::BrokerMetrics::Snapshot {
+    return metrics_.snapshot();
+}
+
+void EpollReactor::log_metrics() {
+    auto s = metrics_.snapshot();
+    logging::info(
+        std::format("metrics: requests_total={} bytes_received={} bytes_sent={} errors_total={} "
+                    "active_connections={}",
+                    s.requests_total,
+                    s.bytes_received,
+                    s.bytes_sent,
+                    s.errors_total,
+                    connections_.size()));
 }
 
 } // namespace net
