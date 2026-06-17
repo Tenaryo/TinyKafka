@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -23,24 +24,31 @@ class ByteWriter {
         return data_.subspan(offset_);
     }
 
-    constexpr void write_int8(uint8_t value) noexcept { data_[offset_++] = value; }
+    constexpr void write_int8(uint8_t value) noexcept {
+        assert(offset_ < data_.size());
+        data_[offset_++] = value;
+    }
 
     constexpr void write_int16(int16_t value) noexcept {
+        assert(offset_ + 2 <= data_.size());
         write_int16_be(value, std::span<uint8_t, 2>{data_.data() + offset_, 2});
         offset_ += 2;
     }
 
     constexpr void write_int32(int32_t value) noexcept {
+        assert(offset_ + 4 <= data_.size());
         write_int32_be(value, std::span<uint8_t, 4>{data_.data() + offset_, 4});
         offset_ += 4;
     }
 
     constexpr void write_int64(int64_t value) noexcept {
+        assert(offset_ + 8 <= data_.size());
         write_int64_be(value, std::span<uint8_t, 8>{data_.data() + offset_, 8});
         offset_ += 8;
     }
 
     void write_bytes(std::span<const uint8_t> data) noexcept {
+        assert(offset_ + data.size() <= data_.size());
         std::memcpy(data_.data() + offset_, data.data(), data.size());
         offset_ += data.size();
     }

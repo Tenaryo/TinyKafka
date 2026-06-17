@@ -28,8 +28,9 @@ auto trim(std::string_view sv) -> std::string_view {
 auto load_properties(std::string_view path) -> std::expected<Properties, std::error_code> {
     std::ifstream file(std::string{path});
     if (!file.is_open()) [[unlikely]] {
+        auto saved_errno = errno;
         logging::error("cannot open file: " + std::string{path});
-        return std::unexpected(std::error_code(errno, std::generic_category()));
+        return std::unexpected(std::error_code(saved_errno, std::generic_category()));
     }
 
     Properties props;

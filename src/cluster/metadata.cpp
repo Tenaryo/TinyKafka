@@ -191,6 +191,9 @@ auto parse_cluster_metadata(std::span<const uint8_t> data)
             }
 
             auto header_count = reader.read_signed_varint();
+            if (!header_count) {
+                continue;
+            }
             for (int32_t h = 0; h < *header_count; ++h) {
                 auto hdr_key_len = reader.read_signed_varint();
                 if (!hdr_key_len) {

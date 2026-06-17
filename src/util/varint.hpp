@@ -36,6 +36,9 @@ constexpr auto read_unsigned_varint(std::span<const uint8_t> buf) noexcept
     size_t i = 0;
     while (i < buf.size()) {
         uint8_t byte = buf[i++];
+        if (shift >= 28) {
+            return std::unexpected(make_error_code(std::errc::message_size));
+        }
         value |= static_cast<uint32_t>(byte & 0x7F) << shift;
         if ((byte & 0x80) == 0) {
             return value;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -22,13 +23,11 @@ class Broker {
     [[nodiscard]] auto
     find_topic_by_name(const std::string& name) const -> const ClusterMetadata::TopicInfo*;
 
-    // Returns a stable reference; PartitionContext entries are never removed,
-    // so the reference remains valid after contexts_mutex_ is released.
     auto get_or_create_context(const std::string& topic_name,
                                int32_t partition) -> broker::PartitionContext&;
 
     ClusterMetadata metadata_;
     std::string log_root_;
     std::mutex contexts_mutex_;
-    std::unordered_map<std::string, broker::PartitionContext> partition_contexts_;
+    std::unordered_map<std::string, std::unique_ptr<broker::PartitionContext>> partition_contexts_;
 };
