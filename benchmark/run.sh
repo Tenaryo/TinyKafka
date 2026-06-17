@@ -7,11 +7,19 @@ RESULTS_DIR="$SCRIPT_DIR/results"
 KAFKA_BIN="$PROJECT_DIR/build/kafka"
 BENCH_BIN="$PROJECT_DIR/benchmark/build/producer_bench"
 
+LOGROOT="$RESULTS_DIR/kafka-logs"
+TOPIC="${4:-bench}"
+
 mkdir -p "$RESULTS_DIR"
 
 echo "[bench] Building producer_bench..."
 cmake -B "$SCRIPT_DIR/build" -S "$SCRIPT_DIR" -G Ninja
 cmake --build "$SCRIPT_DIR/build" --target producer_bench
+
+echo "[bench] Setting up metadata for topic '$TOPIC'..."
+METADATA_DIR="$LOGROOT/__cluster_metadata-0"
+mkdir -p "$METADATA_DIR"
+python3 "$SCRIPT_DIR/setup_metadata.py" "$METADATA_DIR/00000000000000000000.log" "$TOPIC"
 
 echo "[bench] Starting TinyKafka server..."
 "$KAFKA_BIN" --log.dirs="$LOGROOT" &
@@ -35,13 +43,6 @@ done
 TS=$(date +%Y%m%d_%H%M%S)
 REPORT="$RESULTS_DIR/bench_${TS}.md"
 CSV="$RESULTS_DIR/bench_${TS}.csv"
-LOGROOT="$RESULTS_DIR/kafka-logs"
-TOPIC="${4:-bench}"
-
-echo "[bench] Setting up metadata for topic '$TOPIC'..."
-METADATA_DIR="$LOGROOT/__cluster_metadata-0"
-mkdir -p "$METADATA_DIR"
-python3 "$SCRIPT_DIR/setup_metadata.py" "$METADATA_DIR/00000000000000000000.log" "$TOPIC"
 
 "$BENCH_BIN" \
     --messages="${1:-10000}" \

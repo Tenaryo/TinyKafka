@@ -198,7 +198,6 @@ Config parse_args(int argc, char** argv) {
 
 } // namespace
 
-// NOLINTNEXTLINE(bugprone-exception-escape)
 int main(int argc, char** argv) {
     auto config = parse_args(argc, argv);
 
