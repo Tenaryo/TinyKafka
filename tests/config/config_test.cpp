@@ -38,25 +38,35 @@ TEST(ConfigTest, AllDefaults) {
     EXPECT_EQ(config.port, 9092);
     EXPECT_EQ(config.log_root, "/tmp/kraft-combined-logs");
     EXPECT_EQ(config.max_message_bytes, 1'048'576U);
+    EXPECT_EQ(config.max_write_buffer_bytes, 4'194'304U);
 }
 
 TEST(ConfigTest, LoadFromFile) {
     const std::string path = "/tmp/test_config_file.properties";
-    write_temp_file(path, "port=1234\nlog.dirs=/data/logs\nmax.message.bytes=2097152\n");
+    write_temp_file(
+        path,
+        "port=1234\nlog.dirs=/data/logs\nmax.message.bytes=2097152\nmax.write.buffer.bytes="
+        "65536\n");
 
     CliArgs args({});
     auto config = config::Config::load(args.argc(), args.argv(), path);
     EXPECT_EQ(config.port, 1234);
     EXPECT_EQ(config.log_root, "/data/logs");
     EXPECT_EQ(config.max_message_bytes, 2097152U);
+    EXPECT_EQ(config.max_write_buffer_bytes, 65536U);
 }
 
 TEST(ConfigTest, CliOverridesDefaults) {
-    CliArgs args({"./kafka", "--port=9093", "--log.dirs=/cli/path", "--max.message.bytes=65536"});
+    CliArgs args({"./kafka",
+                  "--port=9093",
+                  "--log.dirs=/cli/path",
+                  "--max.message.bytes=65536",
+                  "--max.write.buffer.bytes=131072"});
     auto config = config::Config::load(args.argc(), args.argv(), "/nonexistent/path");
     EXPECT_EQ(config.port, 9093);
     EXPECT_EQ(config.log_root, "/cli/path");
     EXPECT_EQ(config.max_message_bytes, 65536U);
+    EXPECT_EQ(config.max_write_buffer_bytes, 131072U);
 }
 
 TEST(ConfigTest, FileThenCliOverride) {

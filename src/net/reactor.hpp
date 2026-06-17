@@ -45,6 +45,7 @@ class EpollReactor {
     int server_fd_;
     Broker broker_;
     uint32_t max_message_bytes_;
+    size_t max_write_buffer_bytes_;
     std::unordered_map<int, Connection> connections_;
 };
 

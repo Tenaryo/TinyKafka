@@ -49,6 +49,14 @@ void apply_config_key(Config& config, std::string_view key, std::string_view val
             logging::warn("invalid max.message.bytes value: " + std::string(value) +
                           ", using default " + std::to_string(config.max_message_bytes));
         }
+    } else if (key == "max.write.buffer.bytes") {
+        auto parsed = parse_int<size_t>(value);
+        if (parsed != 0) {
+            config.max_write_buffer_bytes = parsed;
+        } else {
+            logging::warn("invalid max.write.buffer.bytes value: " + std::string(value) +
+                          ", using default " + std::to_string(config.max_write_buffer_bytes));
+        }
     }
 }
 

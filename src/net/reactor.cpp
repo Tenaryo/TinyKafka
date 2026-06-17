@@ -19,7 +19,8 @@ namespace net {
 
 EpollReactor::EpollReactor(const config::Config& config, ClusterMetadata metadata, int server_fd)
     : epoll_fd_(::epoll_create1(EPOLL_CLOEXEC)), server_fd_(server_fd),
-      broker_(std::move(metadata), config.log_root), max_message_bytes_(config.max_message_bytes) {
+      broker_(std::move(metadata), config.log_root), max_message_bytes_(config.max_message_bytes),
+      max_write_buffer_bytes_(config.max_write_buffer_bytes) {
     if (epoll_fd_ < 0) [[unlikely]] {
         logging::error("epoll_create1 failed: " + std::to_string(errno));
         return;
@@ -164,6 +165,12 @@ void EpollReactor::handle_read(int fd) {
 
         auto resp = broker_.handle(*req);
         conn.write_buf = serialize(resp);
+        if (conn.write_buf.size() > max_write_buffer_bytes_) [[unlikely]] {
+            logging::error("Response exceeds max_write_buffer_bytes (fd=" + std::to_string(fd) +
+                           ", size=" + std::to_string(conn.write_buf.size()) + ")");
+            close_connection(fd);
+            return;
+        }
         conn.write_offset = 0;
         conn.have_header = false;
         conn.read_buf.clear();
