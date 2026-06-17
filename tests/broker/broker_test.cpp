@@ -1149,3 +1149,16 @@ TEST(BrokerTest, ParseRecordBatchEmptyData) {
     auto result = util::parse_record_batch(std::span<const uint8_t>{});
     EXPECT_FALSE(result.has_value());
 }
+
+TEST(BrokerTest, HandlesFindCoordinatorRequest) {
+    RequestHeader header{10, 0, 42};
+    FindCoordinatorRequest req{header, "my-group", 0};
+    auto resp = Broker(ClusterMetadata{}, "").handle(req);
+    auto r = std::get_if<FindCoordinatorResponse>(&resp);
+    ASSERT_NE(r, nullptr);
+    EXPECT_EQ(r->correlation_id, 42);
+    EXPECT_EQ(r->error_code, 0);
+    EXPECT_EQ(r->node_id, 1);
+    EXPECT_EQ(r->host, "localhost");
+    EXPECT_EQ(r->port, 9092);
+}

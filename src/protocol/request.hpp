@@ -74,9 +74,16 @@ struct ListOffsetsRequest {
     std::vector<ListOffsetsTopicRequest> topics;
 };
 
+struct FindCoordinatorRequest {
+    RequestHeader header;
+    std::string coordinator_key;
+    int8_t key_type = 0;
+};
+
 using Request = std::variant<ApiVersionsRequest,
                              DescribeTopicPartitionsRequest,
                              FetchRequest,
+                             FindCoordinatorRequest,
                              ListOffsetsRequest,
                              MetadataRequest,
                              ProduceRequest>;

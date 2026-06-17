@@ -755,3 +755,22 @@ TEST(SerializerTest, SerializesListOffsetsResponse) {
     EXPECT_EQ(static_cast<size_t>(message_size) + 4, bytes.size());
     EXPECT_EQ(correlation_id, 42);
 }
+
+TEST(SerializerTest, SerializesFindCoordinatorResponse) {
+    FindCoordinatorResponse resp{
+        .correlation_id = 42,
+        .throttle_time_ms = 0,
+        .error_code = 0,
+        .error_message = {},
+        .node_id = 1,
+        .host = "localhost",
+        .port = 9092,
+    };
+
+    auto bytes = serialize(resp);
+    EXPECT_GT(bytes.size(), 20u);
+    int32_t corr_id = (static_cast<int32_t>(bytes[4]) << 24) |
+                      (static_cast<int32_t>(bytes[5]) << 16) |
+                      (static_cast<int32_t>(bytes[6]) << 8) | static_cast<int32_t>(bytes[7]);
+    EXPECT_EQ(corr_id, 42);
+}

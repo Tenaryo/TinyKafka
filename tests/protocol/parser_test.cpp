@@ -788,3 +788,41 @@ TEST(ParserTest, ParsesListOffsetsRequest) {
     EXPECT_EQ(req->topics[0].partitions[0].partition_index, 0);
     EXPECT_EQ(req->topics[0].partitions[0].timestamp, -1);
 }
+
+TEST(ParserTest, ParsesFindCoordinatorRequest) {
+    std::vector<std::uint8_t> buf;
+    auto pb16 = [&](int16_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto pb32 = [&](int32_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+
+    pb16(10);            // api_key = 10
+    pb16(0);             // api_version = 0
+    pb32(42);            // correlation_id
+    pb16(-1);            // client_id = null
+    buf.push_back(0x00); // header TAG_BUFFER
+    buf.push_back(0x07); // key varint = 7 (6+1)
+    buf.push_back('m');
+    buf.push_back('y');
+    buf.push_back('-');
+    buf.push_back('g');
+    buf.push_back('r');
+    buf.push_back('p');
+    buf.push_back(0x00); // key_type = 0 (consumer)
+    buf.push_back(0x00); // body TAG_BUFFER
+
+    auto result = parse_request(buf);
+    ASSERT_TRUE(result.has_value());
+    auto req = std::get_if<FindCoordinatorRequest>(&*result);
+    ASSERT_NE(req, nullptr);
+    EXPECT_EQ(req->header.api_key, 10);
+    EXPECT_EQ(req->header.correlation_id, 42);
+    EXPECT_EQ(req->coordinator_key, "my-grp");
+    EXPECT_EQ(req->key_type, 0);
+}

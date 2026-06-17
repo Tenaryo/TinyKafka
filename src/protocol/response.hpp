@@ -128,9 +128,20 @@ struct ListOffsetsResponse {
     std::vector<ListOffsetsTopicResponse> topics;
 };
 
+struct FindCoordinatorResponse {
+    int32_t correlation_id;
+    int32_t throttle_time_ms;
+    int16_t error_code;
+    std::string error_message;
+    int32_t node_id;
+    std::string host;
+    int32_t port;
+};
+
 using Response = std::variant<ApiVersionsResponse,
                               DescribeTopicPartitionsResponse,
                               FetchResponse,
+                              FindCoordinatorResponse,
                               ListOffsetsResponse,
                               MetadataResponse,
                               ProduceResponse>;

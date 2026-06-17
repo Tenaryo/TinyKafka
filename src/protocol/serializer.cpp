@@ -269,6 +269,34 @@ auto serialize(const Response& resp) -> std::vector<std::uint8_t> {
 
                 return buf;
             },
+            [](const FindCoordinatorResponse& r) -> std::vector<std::uint8_t> {
+                uint32_t err_varint =
+                    r.error_message.empty() ? 0 : static_cast<uint32_t>(r.error_message.size()) + 1;
+                uint32_t host_varint = static_cast<uint32_t>(r.host.size()) + 1;
+                size_t body_size = 4 + 1 + 4 + 2 + varint_encoded_size(err_varint) +
+                                   r.error_message.size() + 4 + varint_encoded_size(host_varint) +
+                                   r.host.size() + 4 + 1;
+
+                std::vector<uint8_t> buf(4 + body_size);
+                ByteWriter writer(buf);
+
+                writer.write_int32(static_cast<int32_t>(body_size));
+                writer.write_int32(r.correlation_id);
+                writer.write_int8(0x00);
+                writer.write_int32(r.throttle_time_ms);
+                writer.write_int16(r.error_code);
+                if (r.error_message.empty()) {
+                    writer.write_varint(0);
+                } else {
+                    writer.write_compact_string(r.error_message);
+                }
+                writer.write_int32(r.node_id);
+                writer.write_compact_string(r.host);
+                writer.write_int32(r.port);
+                writer.write_int8(0x00);
+
+                return buf;
+            },
             [](const ListOffsetsResponse& r) -> std::vector<std::uint8_t> {
                 size_t body_size = 4 + 1 + 4;
 

@@ -86,6 +86,17 @@ auto Broker::handle(const Request& req) -> Response {
                     .throttle_time_ms = 0,
                 };
             },
+            [](const FindCoordinatorRequest& r) -> Response {
+                return FindCoordinatorResponse{
+                    .correlation_id = r.header.correlation_id,
+                    .throttle_time_ms = 0,
+                    .error_code = 0,
+                    .error_message = {},
+                    .node_id = 1,
+                    .host = "localhost",
+                    .port = 9092,
+                };
+            },
             [this](const MetadataRequest& r) -> Response {
                 std::vector<MetadataTopicResponse> topics;
                 if (r.topics.empty()) {

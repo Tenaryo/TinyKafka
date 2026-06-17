@@ -477,6 +477,41 @@ auto parse_request(std::span<const std::uint8_t> buf) -> std::expected<Request, 
         return ProduceRequest{RequestHeader{*api_key, *api_version, *correlation_id},
                               std::move(topics)};
     }
+    case 10: {
+        auto client_id_len = reader.read_int16();
+        if (!client_id_len) {
+            return std::unexpected(client_id_len.error());
+        }
+        if (*client_id_len > 0) {
+            auto skip_client = reader.skip(static_cast<size_t>(*client_id_len));
+            if (!skip_client) {
+                return std::unexpected(skip_client.error());
+            }
+        }
+        auto header_tag = reader.skip(1);
+        if (!header_tag) {
+            return std::unexpected(header_tag.error());
+        }
+
+        auto key = reader.read_compact_string();
+        if (!key) {
+            return std::unexpected(key.error());
+        }
+        auto key_type = reader.read_int8();
+        if (!key_type) {
+            return std::unexpected(key_type.error());
+        }
+        auto body_tag = reader.skip(1);
+        if (!body_tag) {
+            return std::unexpected(body_tag.error());
+        }
+
+        return FindCoordinatorRequest{
+            RequestHeader{*api_key, *api_version, *correlation_id},
+            std::move(*key),
+            static_cast<int8_t>(*key_type),
+        };
+    }
     default:
         return std::unexpected(make_error_code(std::errc::function_not_supported));
     }
