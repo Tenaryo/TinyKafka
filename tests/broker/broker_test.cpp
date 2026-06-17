@@ -1122,7 +1122,7 @@ TEST(BrokerTest, HandlesListOffsetsEarliestLatest) {
 
 TEST(BrokerTest, ParseRecordBatchSingleRecord) {
     auto batch = make_record_batch_v2({{0x01, 0x02, 0x03}});
-    auto result = parse_record_batch(batch);
+    auto result = util::parse_record_batch(batch);
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result->size(), 1u);
     EXPECT_EQ((*result)[0], std::vector<uint8_t>({0x01, 0x02, 0x03}));
@@ -1130,7 +1130,7 @@ TEST(BrokerTest, ParseRecordBatchSingleRecord) {
 
 TEST(BrokerTest, ParseRecordBatchMultiRecord) {
     auto batch = make_record_batch_v2({{0x01}, {0x02, 0x03}, {0x04}});
-    auto result = parse_record_batch(batch);
+    auto result = util::parse_record_batch(batch);
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result->size(), 3u);
     EXPECT_EQ((*result)[0], std::vector<uint8_t>({0x01}));
@@ -1141,11 +1141,11 @@ TEST(BrokerTest, ParseRecordBatchMultiRecord) {
 TEST(BrokerTest, ParseRecordBatchInvalidMagic) {
     std::vector<uint8_t> batch = make_record_batch_v2({{0x01}});
     batch[16] = 0x01;
-    auto result = parse_record_batch(batch);
+    auto result = util::parse_record_batch(batch);
     EXPECT_FALSE(result.has_value());
 }
 
 TEST(BrokerTest, ParseRecordBatchEmptyData) {
-    auto result = parse_record_batch(std::span<const uint8_t>{});
+    auto result = util::parse_record_batch(std::span<const uint8_t>{});
     EXPECT_FALSE(result.has_value());
 }

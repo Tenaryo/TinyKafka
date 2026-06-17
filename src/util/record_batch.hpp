@@ -8,6 +8,8 @@
 
 #include "util/byte_reader.hpp"
 
+namespace util {
+
 inline auto parse_record_batch(std::span<const uint8_t> data)
     -> std::expected<std::vector<std::vector<uint8_t>>, std::error_code> {
     ByteReader reader(data);
@@ -162,3 +164,5 @@ inline auto parse_record_batch(std::span<const uint8_t> data)
 
     return values;
 }
+
+} // namespace util

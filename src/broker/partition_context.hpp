@@ -21,7 +21,7 @@ class PartitionContext {
     [[nodiscard]] auto produce(std::span<const uint8_t> record_batch_data) -> int64_t {
         std::lock_guard lock(mutex_);
 
-        auto values = parse_record_batch(record_batch_data);
+        auto values = util::parse_record_batch(record_batch_data);
         if (!values) {
             return -1;
         }
