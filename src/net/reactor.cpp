@@ -86,6 +86,11 @@ void EpollReactor::handle_accept() {
     }
 
     auto flags = ::fcntl(client_fd, F_GETFL, 0);
+    if (flags < 0) [[unlikely]] {
+        logging::error("fcntl F_GETFL failed: " + std::to_string(errno));
+        ::close(client_fd);
+        return;
+    }
     ::fcntl(client_fd, F_SETFL, flags | O_NONBLOCK); // NOLINT(cppcoreguidelines-pro-type-vararg)
 
     epoll_event ev{};

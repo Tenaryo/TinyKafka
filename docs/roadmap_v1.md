@@ -270,5 +270,5 @@ TinyKafka 已具备的基础能力：
 | 2026-06-16 | v1.0 | M1 F6（类型化 Config 模块 + CLI 覆盖）标记为已完成 | Reviewer |
 | 2026-06-16 | v1.0 | M1 F7（结构化日志）标记为已完成，M1 工程质量基线全部完成 | Reviewer |
 | 2026-06-16 | v1.0 | 新增 M6（io_uring + 协程 I/O 引擎升级），在 M5 benchmark 基线后执行，含 F47/F48/F49 | Reviewer |
-| 2026-06-17 | v1.0 | 从 docs/roadmap_v1.md 同步至根目录 roadmap.md；M2 F9（epoll I/O 多路复用）标记为已完成 — EpollReactor (reactor.cpp/hpp, 255 LOC) 已实现非阻塞 accept/read/write 事件循环 | Reviewer |
+| 2026-06-17 | v1.0 | M2 F9（epoll I/O 多路复用）标记为已完成 — EpollReactor (reactor.cpp/hpp, 255 LOC) 已实现非阻塞 accept/read/write 事件循环 | Reviewer |
 | 2026-06-17 | v1.0 | 更新「当前状态」中网络层描述，从 thread-per-connection 改为 epoll I/O 多路复用 | Reviewer |
