@@ -3,6 +3,8 @@
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <latch>
+#include <thread>
 
 #include "broker/broker.hpp"
 #include "cluster/metadata.hpp"
@@ -649,5 +651,192 @@ TEST(BrokerTest, HandlesProduceRequestWriteFailure) {
 
     std::filesystem::permissions(
         tmp_dir, std::filesystem::perms::owner_all, std::filesystem::perm_options::replace);
+    std::filesystem::remove_all(tmp_dir);
+}
+
+TEST(BrokerTest, ProducesSequentialOffsets) {
+    constexpr TopicId topic_uuid = {
+        0xa1,
+        0xb2,
+        0xc3,
+        0xd4,
+        0xe5,
+        0xf6,
+        0xa7,
+        0xb8,
+        0xc9,
+        0xd0,
+        0xe1,
+        0xf2,
+        0xa3,
+        0xb4,
+        0xc5,
+        0xd6,
+    };
+
+    auto tmp_dir = make_tmp_log_dir();
+    auto meta = make_meta_with_topic("orders", topic_uuid, {0});
+    Broker broker(std::move(meta), tmp_dir);
+
+    for (int batch = 0; batch < 3; ++batch) {
+        std::vector<uint8_t> records = {static_cast<uint8_t>(batch), 0x01, 0x02};
+        RequestHeader header{0, 11, 100 + batch};
+        ProduceRequest req{
+            header,
+            {{.topic_name = "orders", .partitions = {{.partition_index = 0, .records = records}}}}};
+
+        auto resp = broker.handle(req);
+        auto r = std::get_if<ProduceResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        ASSERT_EQ(r->responses.size(), 1u);
+        ASSERT_EQ(r->responses[0].partitions.size(), 1u);
+        EXPECT_EQ(r->responses[0].partitions[0].error_code, 0);
+        EXPECT_EQ(r->responses[0].partitions[0].base_offset, batch);
+        EXPECT_EQ(r->responses[0].partitions[0].log_start_offset, 0);
+    }
+
+    auto log_path = tmp_dir + "/orders-0/00000000000000000000.log";
+    EXPECT_TRUE(std::filesystem::exists(log_path));
+    std::ifstream f(log_path, std::ios::binary | std::ios::ate);
+    ASSERT_TRUE(f.is_open());
+    auto sz = f.tellg();
+    ASSERT_EQ(static_cast<size_t>(sz), 9u);
+
+    std::filesystem::remove_all(tmp_dir);
+}
+
+TEST(BrokerTest, ProducesConcurrentSamePartition) {
+    constexpr TopicId topic_uuid = {
+        0xa1,
+        0xb2,
+        0xc3,
+        0xd4,
+        0xe5,
+        0xf6,
+        0xa7,
+        0xb8,
+        0xc9,
+        0xd0,
+        0xe1,
+        0xf2,
+        0xa3,
+        0xb4,
+        0xc5,
+        0xd6,
+    };
+
+    auto tmp_dir = make_tmp_log_dir();
+    auto meta = make_meta_with_topic("orders", topic_uuid, {0});
+    Broker broker(std::move(meta), tmp_dir);
+
+    constexpr int kThreads = 8;
+    std::vector<int64_t> offsets(kThreads, -1);
+    std::latch start(1);
+
+    std::vector<std::thread> threads;
+    threads.reserve(static_cast<size_t>(kThreads));
+    for (int t = 0; t < kThreads; ++t) {
+        threads.emplace_back([&, t] {
+            start.wait();
+            std::vector<uint8_t> records = {static_cast<uint8_t>(t), 0x01, 0x02, 0x03};
+            RequestHeader header{0, 11, 1000 + t};
+            ProduceRequest req{header,
+                               {{.topic_name = "orders",
+                                 .partitions = {{.partition_index = 0, .records = records}}}}};
+            auto resp = broker.handle(req);
+            auto r = std::get_if<ProduceResponse>(&resp);
+            ASSERT_NE(r, nullptr);
+            ASSERT_EQ(r->responses.size(), 1u);
+            ASSERT_EQ(r->responses[0].partitions.size(), 1u);
+            EXPECT_EQ(r->responses[0].partitions[0].error_code, 0);
+            offsets[static_cast<size_t>(t)] = r->responses[0].partitions[0].base_offset;
+        });
+    }
+
+    start.count_down();
+
+    for (auto& t : threads) {
+        t.join();
+    }
+
+    std::ranges::sort(offsets);
+    for (int i = 0; i < kThreads; ++i) {
+        EXPECT_EQ(offsets[static_cast<size_t>(i)], i);
+    }
+
+    auto log_path = tmp_dir + "/orders-0/00000000000000000000.log";
+    EXPECT_TRUE(std::filesystem::exists(log_path));
+    std::ifstream f(log_path, std::ios::binary | std::ios::ate);
+    ASSERT_TRUE(f.is_open());
+    auto sz = f.tellg();
+    ASSERT_EQ(static_cast<size_t>(sz), static_cast<size_t>(kThreads) * 4u);
+
+    std::filesystem::remove_all(tmp_dir);
+}
+
+TEST(BrokerTest, ProducesConcurrentDifferentPartitions) {
+    constexpr TopicId topic_uuid = {
+        0xa1,
+        0xb2,
+        0xc3,
+        0xd4,
+        0xe5,
+        0xf6,
+        0xa7,
+        0xb8,
+        0xc9,
+        0xd0,
+        0xe1,
+        0xf2,
+        0xa3,
+        0xb4,
+        0xc5,
+        0xd6,
+    };
+
+    auto tmp_dir = make_tmp_log_dir();
+    auto meta = make_meta_with_topic("orders", topic_uuid, {0, 1, 2});
+    Broker broker(std::move(meta), tmp_dir);
+
+    constexpr int kPartitions = 3;
+    std::latch start(1);
+
+    std::vector<std::thread> threads;
+    threads.reserve(static_cast<size_t>(kPartitions));
+    for (int p = 0; p < kPartitions; ++p) {
+        threads.emplace_back([&, p] {
+            start.wait();
+            for (int batch = 0; batch < 5; ++batch) {
+                std::vector<uint8_t> records = {static_cast<uint8_t>(batch), 0xFF};
+                RequestHeader header{0, 11, 2000 + p * 100 + batch};
+                ProduceRequest req{header,
+                                   {{.topic_name = "orders",
+                                     .partitions = {{.partition_index = p, .records = records}}}}};
+                auto resp = broker.handle(req);
+                auto r = std::get_if<ProduceResponse>(&resp);
+                ASSERT_NE(r, nullptr);
+                ASSERT_EQ(r->responses.size(), 1u);
+                ASSERT_EQ(r->responses[0].partitions.size(), 1u);
+                EXPECT_EQ(r->responses[0].partitions[0].error_code, 0);
+                EXPECT_EQ(r->responses[0].partitions[0].base_offset, batch);
+            }
+        });
+    }
+
+    start.count_down();
+
+    for (auto& t : threads) {
+        t.join();
+    }
+
+    for (int p = 0; p < kPartitions; ++p) {
+        auto log_path = tmp_dir + "/orders-" + std::to_string(p) + "/00000000000000000000.log";
+        EXPECT_TRUE(std::filesystem::exists(log_path)) << "partition " << p;
+        std::ifstream f(log_path, std::ios::binary | std::ios::ate);
+        ASSERT_TRUE(f.is_open());
+        auto sz = f.tellg();
+        ASSERT_EQ(static_cast<size_t>(sz), 10u);
+    }
+
     std::filesystem::remove_all(tmp_dir);
 }

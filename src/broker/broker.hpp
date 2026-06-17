@@ -1,7 +1,10 @@
 #pragma once
 
+#include <mutex>
 #include <string>
+#include <unordered_map>
 
+#include "broker/partition_context.hpp"
 #include "cluster/metadata.hpp"
 #include "protocol/request.hpp"
 #include "protocol/response.hpp"
@@ -19,6 +22,11 @@ class Broker {
     [[nodiscard]] auto
     find_topic_by_name(const std::string& name) const -> const ClusterMetadata::TopicInfo*;
 
+    auto get_or_create_context(const std::string& topic_name,
+                               int32_t partition) -> broker::PartitionContext&;
+
     ClusterMetadata metadata_;
     std::string log_root_;
+    std::mutex contexts_mutex_;
+    std::unordered_map<std::string, broker::PartitionContext> partition_contexts_;
 };

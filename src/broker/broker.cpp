@@ -5,7 +5,6 @@
 #include "protocol/api_registry.hpp"
 #include "protocol/response.hpp"
 #include "storage/log_reader.hpp"
-#include "storage/log_writer.hpp"
 #include "util/overloaded.hpp"
 
 auto Broker::build_topic_metadata(const std::string& topic_name) const -> TopicMetadata {
@@ -66,6 +65,14 @@ auto Broker::find_topic_by_name(const std::string& name) const
     return &metadata_.topics[it->second];
 }
 
+auto Broker::get_or_create_context(const std::string& topic_name,
+                                   int32_t partition) -> broker::PartitionContext& {
+    auto key = topic_name + ":" + std::to_string(partition);
+    std::lock_guard lock(contexts_mutex_);
+    auto [it, inserted] = partition_contexts_.try_emplace(key, log_root_, topic_name, partition);
+    return it->second;
+}
+
 auto Broker::handle(const Request& req) -> Response {
     return std::visit(
         Overloaded{
@@ -106,13 +113,11 @@ auto Broker::handle(const Request& req) -> Response {
                             int64_t base_offset = 0;
                             int64_t log_start_offset = 0;
                             if (!part_req.records.empty()) {
-                                auto ec = storage::write_topic_log(log_root_,
-                                                                   topic_req.topic_name,
-                                                                   part_req.partition_index,
-                                                                   part_req.records);
-                                if (ec) {
+                                auto& ctx = get_or_create_context(topic_req.topic_name,
+                                                                  part_req.partition_index);
+                                base_offset = ctx.produce(part_req.records);
+                                if (base_offset < 0) {
                                     error_code = 56;
-                                    base_offset = -1;
                                     log_start_offset = -1;
                                 }
                             }
