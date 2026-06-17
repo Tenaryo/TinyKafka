@@ -704,3 +704,29 @@ TEST(SerializerTest, SerializesProduceResponseValid) {
     EXPECT_EQ(bytes[51], 0x00); // topic tagged_fields
     EXPECT_EQ(bytes[56], 0x00); // body tagged_fields
 }
+
+TEST(SerializerTest, SerializesMetadataResponse) {
+    MetadataResponse resp{
+        .correlation_id = 42,
+        .throttle_time_ms = 0,
+        .brokers = {{.node_id = 1, .host = "localhost", .port = 9092, .rack = {}}},
+        .cluster_id = "test-cluster",
+        .controller_id = 1,
+        .topics = {},
+        .cluster_authorized_operations = 0,
+    };
+
+    auto bytes = serialize(resp);
+    EXPECT_GT(bytes.size(), 20u) << "Response should have a reasonable size";
+    EXPECT_EQ(bytes[0], 0x00);
+    EXPECT_EQ(bytes[1], 0x00);
+
+    int32_t message_size = (static_cast<int32_t>(bytes[0]) << 24) |
+                           (static_cast<int32_t>(bytes[1]) << 16) |
+                           (static_cast<int32_t>(bytes[2]) << 8) | static_cast<int32_t>(bytes[3]);
+    int32_t correlation_id = (static_cast<int32_t>(bytes[4]) << 24) |
+                             (static_cast<int32_t>(bytes[5]) << 16) |
+                             (static_cast<int32_t>(bytes[6]) << 8) | static_cast<int32_t>(bytes[7]);
+    EXPECT_EQ(static_cast<size_t>(message_size) + 4, bytes.size());
+    EXPECT_EQ(correlation_id, 42);
+}

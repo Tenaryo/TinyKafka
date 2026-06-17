@@ -84,5 +84,34 @@ struct ProduceResponse {
     std::vector<ProduceTopicResponse> responses;
 };
 
-using Response = std::
-    variant<ApiVersionsResponse, DescribeTopicPartitionsResponse, FetchResponse, ProduceResponse>;
+struct MetadataBroker {
+    int32_t node_id = 0;
+    std::string host;
+    int32_t port = 0;
+    std::string rack;
+};
+
+struct MetadataTopicResponse {
+    int16_t error_code = 0;
+    std::string topic_name;
+    std::array<uint8_t, 16> topic_id{};
+    bool is_internal = false;
+    std::vector<PartitionMetadata> partitions;
+    int32_t topic_authorized_operations = 0;
+};
+
+struct MetadataResponse {
+    int32_t correlation_id;
+    int32_t throttle_time_ms;
+    std::vector<MetadataBroker> brokers;
+    std::string cluster_id;
+    int32_t controller_id;
+    std::vector<MetadataTopicResponse> topics;
+    int32_t cluster_authorized_operations;
+};
+
+using Response = std::variant<ApiVersionsResponse,
+                              DescribeTopicPartitionsResponse,
+                              FetchResponse,
+                              MetadataResponse,
+                              ProduceResponse>;

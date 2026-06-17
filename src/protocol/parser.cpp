@@ -240,6 +240,57 @@ auto parse_request(std::span<const std::uint8_t> buf) -> std::expected<Request, 
         return FetchRequest{
             RequestHeader{*api_key, *api_version, *correlation_id}, std::move(topics), *max_bytes};
     }
+    case 3: {
+        auto client_id_len = reader.read_int16();
+        if (!client_id_len) {
+            return std::unexpected(client_id_len.error());
+        }
+        if (*client_id_len > 0) {
+            auto skip_client = reader.skip(static_cast<size_t>(*client_id_len));
+            if (!skip_client) {
+                return std::unexpected(skip_client.error());
+            }
+        }
+        auto header_tag = reader.skip(1);
+        if (!header_tag) {
+            return std::unexpected(header_tag.error());
+        }
+
+        auto topics_array_len = reader.read_int32();
+        if (!topics_array_len) {
+            return std::unexpected(topics_array_len.error());
+        }
+
+        std::vector<std::string> topic_names;
+        if (*topics_array_len > 0) {
+            topic_names.reserve(static_cast<size_t>(*topics_array_len));
+            for (int32_t i = 0; i < *topics_array_len; ++i) {
+                auto name_len = reader.read_int16();
+                if (!name_len) {
+                    return std::unexpected(name_len.error());
+                }
+                if (*name_len > 0) {
+                    auto name_bytes = reader.read_bytes(static_cast<size_t>(*name_len));
+                    if (!name_bytes) {
+                        return std::unexpected(name_bytes.error());
+                    }
+                    topic_names.emplace_back(reinterpret_cast<const char*>(name_bytes->data()),
+                                             name_bytes->size());
+                }
+            }
+        }
+
+        auto allow_create = reader.read_int8();
+        if (!allow_create) {
+            return std::unexpected(allow_create.error());
+        }
+
+        return MetadataRequest{
+            RequestHeader{*api_key, *api_version, *correlation_id},
+            std::move(topic_names),
+            *allow_create != 0,
+        };
+    }
     case 0: {
         auto client_id_len = reader.read_int16();
         if (!client_id_len) {

@@ -51,5 +51,14 @@ struct ProduceRequest {
     std::vector<ProduceTopicRequest> topics;
 };
 
-using Request =
-    std::variant<ApiVersionsRequest, DescribeTopicPartitionsRequest, FetchRequest, ProduceRequest>;
+struct MetadataRequest {
+    RequestHeader header;
+    std::vector<std::string> topics;
+    bool allow_auto_topic_creation = false;
+};
+
+using Request = std::variant<ApiVersionsRequest,
+                             DescribeTopicPartitionsRequest,
+                             FetchRequest,
+                             MetadataRequest,
+                             ProduceRequest>;

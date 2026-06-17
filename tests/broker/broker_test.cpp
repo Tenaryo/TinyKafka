@@ -904,3 +904,79 @@ TEST(BrokerTest, FetchReturnsProducedRecords) {
 
     std::filesystem::remove_all(tmp_dir);
 }
+
+TEST(BrokerTest, HandlesMetadataRequestReturnsTopicInfo) {
+    constexpr TopicId topic_uuid = {
+        0xa1,
+        0xb2,
+        0xc3,
+        0xd4,
+        0xe5,
+        0xf6,
+        0xa7,
+        0xb8,
+        0xc9,
+        0xd0,
+        0xe1,
+        0xf2,
+        0xa3,
+        0xb4,
+        0xc5,
+        0xd6,
+    };
+    auto meta = make_meta_with_topic("orders", topic_uuid, {0, 1});
+
+    RequestHeader header{3, 0, 42};
+    MetadataRequest req{header, {"orders"}, false};
+    auto resp = Broker(std::move(meta), "").handle(req);
+    auto r = std::get_if<MetadataResponse>(&resp);
+    ASSERT_NE(r, nullptr);
+    EXPECT_EQ(r->correlation_id, 42);
+    EXPECT_EQ(r->throttle_time_ms, 0);
+
+    ASSERT_EQ(r->brokers.size(), 1u);
+    EXPECT_EQ(r->brokers[0].node_id, 1);
+    EXPECT_EQ(r->brokers[0].host, "localhost");
+    EXPECT_EQ(r->brokers[0].port, 9092);
+
+    EXPECT_EQ(r->cluster_id, "TinyKafka");
+    EXPECT_EQ(r->controller_id, 1);
+
+    ASSERT_EQ(r->topics.size(), 1u);
+    EXPECT_EQ(r->topics[0].error_code, 0);
+    EXPECT_EQ(r->topics[0].topic_name, "orders");
+    EXPECT_EQ(r->topics[0].topic_id, topic_uuid);
+    ASSERT_EQ(r->topics[0].partitions.size(), 2u);
+    EXPECT_EQ(r->topics[0].partitions[0].partition_index, 0);
+    EXPECT_EQ(r->topics[0].partitions[1].partition_index, 1);
+}
+
+TEST(BrokerTest, HandlesMetadataRequestEmptyTopicsReturnsAll) {
+    constexpr TopicId topic_uuid = {
+        0xa1,
+        0xb2,
+        0xc3,
+        0xd4,
+        0xe5,
+        0xf6,
+        0xa7,
+        0xb8,
+        0xc9,
+        0xd0,
+        0xe1,
+        0xf2,
+        0xa3,
+        0xb4,
+        0xc5,
+        0xd6,
+    };
+    auto meta = make_meta_with_topic("orders", topic_uuid, {0});
+
+    RequestHeader header{3, 0, 42};
+    MetadataRequest req{header, {}, false};
+    auto resp = Broker(std::move(meta), "").handle(req);
+    auto r = std::get_if<MetadataResponse>(&resp);
+    ASSERT_NE(r, nullptr);
+    ASSERT_EQ(r->topics.size(), 1u);
+    EXPECT_EQ(r->topics[0].topic_name, "orders");
+}

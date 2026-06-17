@@ -296,13 +296,13 @@ TEST(IntegrationTest, ServerHandlesApiVersionsValidVersion) {
     auto sent = send(sock, request.data(), request.size(), 0);
     ASSERT_GE(sent, 0) << "Failed to send request";
 
-    auto response = read_exactly<44>(sock);
+    auto response = read_exactly<51>(sock);
     close(sock);
 
     EXPECT_EQ(response[0], 0x00);
     EXPECT_EQ(response[1], 0x00);
     EXPECT_EQ(response[2], 0x00);
-    EXPECT_EQ(response[3], 0x28); // message_size = 40
+    EXPECT_EQ(response[3], 0x2F); // message_size = 47
 
     int32_t echoed_correlation_id =
         decode_int32_be_response(std::span<const uint8_t, 4>{response.data() + 4, 4});
@@ -311,7 +311,7 @@ TEST(IntegrationTest, ServerHandlesApiVersionsValidVersion) {
     int16_t error_code = static_cast<int16_t>((static_cast<int16_t>(response[8]) << 8) |
                                               static_cast<int16_t>(response[9]));
     EXPECT_EQ(error_code, 0);
-    EXPECT_EQ(response[10], 0x05); // compact array length = 4 (varint: 4+1)
+    EXPECT_EQ(response[10], 0x06); // compact array length = 5 (varint: 5+1=6)
     EXPECT_EQ(response[11], 0x00);
     EXPECT_EQ(response[12], 0x00); // api_key = 0 (Produce)
     EXPECT_EQ(response[13], 0x00);
@@ -327,24 +327,31 @@ TEST(IntegrationTest, ServerHandlesApiVersionsValidVersion) {
     EXPECT_EQ(response[23], 0x10); // max_version = 16
     EXPECT_EQ(response[24], 0x00); // TAG_BUFFER (entry 1)
     EXPECT_EQ(response[25], 0x00);
-    EXPECT_EQ(response[26], 0x12); // api_key = 18 (ApiVersions)
+    EXPECT_EQ(response[26], 0x03); // api_key = 3 (Metadata)
     EXPECT_EQ(response[27], 0x00);
     EXPECT_EQ(response[28], 0x00); // min_version = 0
     EXPECT_EQ(response[29], 0x00);
-    EXPECT_EQ(response[30], 0x04); // max_version = 4
+    EXPECT_EQ(response[30], 0x0C); // max_version = 12
     EXPECT_EQ(response[31], 0x00); // TAG_BUFFER (entry 2)
     EXPECT_EQ(response[32], 0x00);
-    EXPECT_EQ(response[33], 0x4B); // api_key = 75 (DescribeTopicPartitions)
+    EXPECT_EQ(response[33], 0x12); // api_key = 18 (ApiVersions)
     EXPECT_EQ(response[34], 0x00);
     EXPECT_EQ(response[35], 0x00); // min_version = 0
     EXPECT_EQ(response[36], 0x00);
-    EXPECT_EQ(response[37], 0x00); // max_version = 0
+    EXPECT_EQ(response[37], 0x04); // max_version = 4
     EXPECT_EQ(response[38], 0x00); // TAG_BUFFER (entry 3)
     EXPECT_EQ(response[39], 0x00);
-    EXPECT_EQ(response[40], 0x00);
+    EXPECT_EQ(response[40], 0x4B); // api_key = 75 (DescribeTopicPartitions)
     EXPECT_EQ(response[41], 0x00);
-    EXPECT_EQ(response[42], 0x00); // throttle_time_ms = 0
-    EXPECT_EQ(response[43], 0x00); // TAG_BUFFER
+    EXPECT_EQ(response[42], 0x00); // min_version = 0
+    EXPECT_EQ(response[43], 0x00);
+    EXPECT_EQ(response[44], 0x00); // max_version = 0
+    EXPECT_EQ(response[45], 0x00); // TAG_BUFFER (entry 4)
+    EXPECT_EQ(response[46], 0x00);
+    EXPECT_EQ(response[47], 0x00);
+    EXPECT_EQ(response[48], 0x00);
+    EXPECT_EQ(response[49], 0x00); // throttle_time_ms = 0
+    EXPECT_EQ(response[50], 0x00); // TAG_BUFFER
 }
 
 TEST(IntegrationTest, ServerHandlesMultipleRequestsSameConnection) {
@@ -1184,4 +1191,68 @@ TEST(IntegrationTest, ProduceRequestPersistsRecordBatchToDisk) {
     std::vector<uint8_t> disk_buf(static_cast<size_t>(file_sz));
     log_file.read(reinterpret_cast<char*>(disk_buf.data()), file_sz);
     EXPECT_EQ(disk_buf, record_batch);
+}
+
+TEST(IntegrationTest, ServerHandlesMetadataRequest) {
+    auto log_root = make_unique_temp_dir();
+    ServerProcess server(log_root);
+
+    int sock = server.connect_with_retry();
+    ASSERT_GE(sock, 0) << "Failed to connect to server";
+
+    std::vector<uint8_t> request;
+    auto pb16 = [&](int16_t v) {
+        request.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        request.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto pb32 = [&](int32_t v) {
+        request.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+        request.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        request.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        request.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+
+    pb32(0); // message_length placeholder
+    size_t body_start = request.size();
+    pb16(3);                  // api_key = 3 (Metadata)
+    pb16(0);                  // api_version = 0
+    pb32(kTestCorrelationId); // correlation_id
+    pb16(-1);                 // client_id = null
+    request.push_back(0x00);  // header TAG_BUFFER
+    pb32(0);                  // topics: empty array
+    request.push_back(0x00);  // allow_auto_topic_creation = false
+
+    int32_t message_len = static_cast<int32_t>(request.size() - body_start);
+    request[0] = static_cast<uint8_t>((message_len >> 24) & 0xFF);
+    request[1] = static_cast<uint8_t>((message_len >> 16) & 0xFF);
+    request[2] = static_cast<uint8_t>((message_len >> 8) & 0xFF);
+    request[3] = static_cast<uint8_t>(message_len & 0xFF);
+
+    auto sent = send(sock, request.data(), request.size(), 0);
+    ASSERT_GE(sent, 0) << "Failed to send request";
+
+    auto len_prefix = read_exactly<4>(sock);
+    int32_t resp_msg_len = decode_int32_be_response(len_prefix);
+    EXPECT_GT(resp_msg_len, 0) << "Response message length must be positive";
+
+    std::vector<uint8_t> body(resp_msg_len);
+    size_t total = 0;
+    while (total < body.size()) {
+        auto n = read(sock, body.data() + total, body.size() - total);
+        ASSERT_GT(n, 0) << "Failed to read response body";
+        total += static_cast<size_t>(n);
+    }
+    close(sock);
+
+    int32_t echoed_cid = (static_cast<int32_t>(body[0]) << 24) |
+                         (static_cast<int32_t>(body[1]) << 16) |
+                         (static_cast<int32_t>(body[2]) << 8) | static_cast<int32_t>(body[3]);
+    EXPECT_EQ(echoed_cid, kTestCorrelationId) << "Correlation ID mismatch";
+
+    EXPECT_EQ(body[4], 0x00); // header TAG_BUFFER
+
+    int32_t throttle = (static_cast<int32_t>(body[5]) << 24) |
+                       (static_cast<int32_t>(body[6]) << 16) |
+                       (static_cast<int32_t>(body[7]) << 8) | static_cast<int32_t>(body[8]);
+    EXPECT_EQ(throttle, 0);
 }

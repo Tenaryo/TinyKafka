@@ -664,3 +664,76 @@ TEST(ParserTest, ParsesProduceV11WithClientIdAndTxId) {
     ASSERT_EQ(req->topics.size(), 1u);
     EXPECT_EQ(req->topics[0].topic_name, "foo");
 }
+
+TEST(ParserTest, ParsesMetadataRequestWithTopics) {
+    std::vector<std::uint8_t> buf;
+    auto push_be16 = [&](int16_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto push_be32 = [&](int32_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+
+    push_be16(3);        // api_key = 3
+    push_be16(0);        // api_version = 0
+    push_be32(42);       // correlation_id = 42
+    push_be16(-1);       // client_id = null
+    buf.push_back(0x00); // header TAG_BUFFER
+    push_be32(2);        // topics array length = 2
+    push_be16(3);        // topic name length = 3
+    buf.push_back('f');
+    buf.push_back('o');
+    buf.push_back('o');
+    push_be16(3); // topic name length = 3
+    buf.push_back('b');
+    buf.push_back('a');
+    buf.push_back('r');
+    buf.push_back(0x01); // allow_auto_topic_creation = true
+
+    auto result = parse_request(buf);
+    ASSERT_TRUE(result.has_value());
+    auto req = std::get_if<MetadataRequest>(&*result);
+    ASSERT_NE(req, nullptr);
+    EXPECT_EQ(req->header.api_key, 3);
+    EXPECT_EQ(req->header.api_version, 0);
+    EXPECT_EQ(req->header.correlation_id, 42);
+    ASSERT_EQ(req->topics.size(), 2u);
+    EXPECT_EQ(req->topics[0], "foo");
+    EXPECT_EQ(req->topics[1], "bar");
+    EXPECT_TRUE(req->allow_auto_topic_creation);
+}
+
+TEST(ParserTest, ParsesMetadataRequestEmptyTopics) {
+    std::vector<std::uint8_t> buf;
+    auto push_be16 = [&](int16_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto push_be32 = [&](int32_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+
+    push_be16(3);        // api_key = 3
+    push_be16(0);        // api_version = 0
+    push_be32(42);       // correlation_id = 42
+    push_be16(-1);       // client_id = null
+    buf.push_back(0x00); // header TAG_BUFFER
+    push_be32(0);        // topics array empty
+    buf.push_back(0x00); // allow_auto_topic_creation = false
+
+    auto result = parse_request(buf);
+    ASSERT_TRUE(result.has_value());
+    auto req = std::get_if<MetadataRequest>(&*result);
+    ASSERT_NE(req, nullptr);
+    EXPECT_EQ(req->header.api_key, 3);
+    EXPECT_EQ(req->header.correlation_id, 42);
+    EXPECT_TRUE(req->topics.empty());
+    EXPECT_FALSE(req->allow_auto_topic_creation);
+}

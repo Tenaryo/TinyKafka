@@ -85,6 +85,43 @@ auto Broker::handle(const Request& req) -> Response {
                     .throttle_time_ms = 0,
                 };
             },
+            [this](const MetadataRequest& r) -> Response {
+                std::vector<MetadataTopicResponse> topics;
+                if (r.topics.empty()) {
+                    for (const auto& info : metadata_.topics) {
+                        auto tm = build_topic_metadata(info.name);
+                        topics.push_back(MetadataTopicResponse{
+                            .error_code = tm.error_code,
+                            .topic_name = tm.topic_name,
+                            .topic_id = tm.topic_id,
+                            .is_internal = tm.is_internal,
+                            .partitions = std::move(tm.partitions),
+                            .topic_authorized_operations = tm.authorized_operations,
+                        });
+                    }
+                } else {
+                    for (const auto& name : r.topics) {
+                        auto tm = build_topic_metadata(name);
+                        topics.push_back(MetadataTopicResponse{
+                            .error_code = tm.error_code,
+                            .topic_name = tm.topic_name,
+                            .topic_id = tm.topic_id,
+                            .is_internal = tm.is_internal,
+                            .partitions = std::move(tm.partitions),
+                            .topic_authorized_operations = tm.authorized_operations,
+                        });
+                    }
+                }
+                return MetadataResponse{
+                    .correlation_id = r.header.correlation_id,
+                    .throttle_time_ms = 0,
+                    .brokers = {{.node_id = 1, .host = "localhost", .port = 9092, .rack = {}}},
+                    .cluster_id = "TinyKafka",
+                    .controller_id = 1,
+                    .topics = std::move(topics),
+                    .cluster_authorized_operations = 0,
+                };
+            },
             [this](const DescribeTopicPartitionsRequest& r) -> Response {
                 std::vector<TopicMetadata> topics;
                 topics.reserve(r.topic_names.size());
