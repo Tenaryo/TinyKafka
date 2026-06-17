@@ -8,6 +8,7 @@
 
 #include "storage/log_reader.hpp"
 #include "storage/log_writer.hpp"
+#include "util/record_batch.hpp"
 
 namespace broker {
 
@@ -17,15 +18,24 @@ class PartitionContext {
         : log_root_(std::move(log_root)), topic_name_(std::move(topic_name)),
           partition_(partition) {}
 
-    [[nodiscard]] auto produce(std::span<const uint8_t> records) -> int64_t {
+    [[nodiscard]] auto produce(std::span<const uint8_t> record_batch_data) -> int64_t {
         std::lock_guard lock(mutex_);
-        auto offset = next_offset_;
-        auto ec = storage::write_topic_log(log_root_, topic_name_, partition_, records);
-        if (ec) {
+
+        auto values = parse_record_batch(record_batch_data);
+        if (!values) {
             return -1;
         }
-        ++next_offset_;
-        return offset;
+
+        auto base_offset = next_offset_;
+        for (const auto& value : *values) {
+            auto ec = storage::write_topic_log(log_root_, topic_name_, partition_, value);
+            if (ec) {
+                next_offset_ = base_offset;
+                return -1;
+            }
+            ++next_offset_;
+        }
+        return base_offset;
     }
 
     [[nodiscard]] auto fetch() -> std::vector<uint8_t> {

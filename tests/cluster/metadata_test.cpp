@@ -123,7 +123,6 @@ auto build_record_batch_raw(const std::vector<std::vector<uint8_t>>& records)
     push_be64(0);
     push_be16(0);
     push_be32(0);
-    push_be32(static_cast<int32_t>(records.size()));
 
     std::vector<uint8_t> all_records;
     for (const auto& rec : records) {
@@ -171,14 +170,13 @@ auto build_record_batch(const std::vector<std::vector<uint8_t>>& record_values)
     push_be64(0);
     push_be16(0);
     push_be32(0);
-    push_be32(static_cast<int32_t>(record_values.size()));
 
-    std::vector<uint8_t> records;
+    std::vector<uint8_t> all_records;
     for (const auto& value : record_values) {
         auto rec = make_record(value);
-        records.insert(records.end(), rec.begin(), rec.end());
+        all_records.insert(all_records.end(), rec.begin(), rec.end());
     }
-    buf.insert(buf.end(), records.begin(), records.end());
+    buf.insert(buf.end(), all_records.begin(), all_records.end());
 
     int32_t batch_len = static_cast<int32_t>(buf.size() - batch_len_pos - 4);
     buf[batch_len_pos] = static_cast<uint8_t>((batch_len >> 24) & 0xFF);

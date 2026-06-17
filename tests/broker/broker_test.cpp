@@ -10,6 +10,7 @@
 
 #include "broker/broker.hpp"
 #include "cluster/metadata.hpp"
+#include "util/record_batch.hpp"
 
 using TopicId = std::array<uint8_t, 16>;
 
@@ -33,6 +34,72 @@ auto make_tmp_log_dir() -> std::string {
                 ("tinytk_test_" + std::to_string(getpid()) + "_" + std::to_string(++counter));
     std::filesystem::create_directories(path);
     return path.string();
+}
+
+void push_be64(std::vector<uint8_t>& buf, int64_t v) {
+    for (int i = 7; i >= 0; --i)
+        buf.push_back(static_cast<uint8_t>((v >> (i * 8)) & 0xFF));
+}
+
+void push_be32(std::vector<uint8_t>& buf, int32_t v) {
+    buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+    buf.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+    buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+    buf.push_back(static_cast<uint8_t>(v & 0xFF));
+}
+
+void push_be16(std::vector<uint8_t>& buf, int16_t v) {
+    buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+    buf.push_back(static_cast<uint8_t>(v & 0xFF));
+}
+
+void push_signed_varint(std::vector<uint8_t>& buf, int32_t val) {
+    uint32_t encoded =
+        static_cast<uint32_t>((static_cast<uint32_t>(val) << 1) ^ static_cast<uint32_t>(val >> 31));
+    while (encoded > 0x7F) {
+        buf.push_back(static_cast<uint8_t>((encoded & 0x7F) | 0x80));
+        encoded >>= 7;
+    }
+    buf.push_back(static_cast<uint8_t>(encoded & 0x7F));
+}
+
+auto make_record_batch_v2(const std::vector<std::vector<uint8_t>>& record_values)
+    -> std::vector<uint8_t> {
+    std::vector<uint8_t> buf;
+    push_be64(buf, 0); // baseOffset
+    size_t batch_len_pos = buf.size();
+    push_be32(buf, 0);                                              // batchLength placeholder
+    push_be32(buf, 0);                                              // leaderEpoch
+    buf.push_back(0x02);                                            // magic = 2
+    push_be32(buf, 0);                                              // crc
+    push_be16(buf, 0);                                              // attributes
+    push_be32(buf, static_cast<int32_t>(record_values.size()) - 1); // lastOffsetDelta
+    push_be64(buf, 0);                                              // baseTimestamp
+    push_be64(buf, 0);                                              // maxTimestamp
+    push_be64(buf, 0);                                              // producerId
+    push_be16(buf, 0);                                              // producerEpoch
+    push_be32(buf, 0);                                              // baseSequence
+
+    for (const auto& value : record_values) {
+        uint32_t body_size = 1 + 1 + 1 + 1 + 1 + static_cast<uint32_t>(value.size()) + 1;
+        push_signed_varint(buf, static_cast<int32_t>(body_size));
+        buf.push_back(0x00);         // attributes
+        push_signed_varint(buf, 0);  // timestampDelta
+        push_signed_varint(buf, 0);  // offsetDelta
+        push_signed_varint(buf, -1); // keyLen = null
+        push_signed_varint(buf, static_cast<int32_t>(value.size()));
+        buf.insert(buf.end(), value.begin(), value.end());
+        push_signed_varint(buf, 0); // headerCount
+    }
+
+    int32_t batch_len = static_cast<int32_t>(buf.size() - batch_len_pos - 4);
+    push_be32(buf, batch_len);
+    buf[batch_len_pos] = static_cast<uint8_t>((batch_len >> 24) & 0xFF);
+    buf[batch_len_pos + 1] = static_cast<uint8_t>((batch_len >> 16) & 0xFF);
+    buf[batch_len_pos + 2] = static_cast<uint8_t>((batch_len >> 8) & 0xFF);
+    buf[batch_len_pos + 3] = static_cast<uint8_t>(batch_len & 0xFF);
+
+    return buf;
 }
 
 } // namespace
@@ -569,7 +636,8 @@ TEST(BrokerTest, HandlesProduceRequestWritesToDisk) {
         0xc5,
         0xd6,
     };
-    std::vector<uint8_t> record_batch = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05};
+    std::vector<uint8_t> record_value = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05};
+    auto record_batch = make_record_batch_v2({record_value});
 
     auto tmp_dir = make_tmp_log_dir();
     auto meta = make_meta_with_topic("orders", topic_uuid, {0});
@@ -598,11 +666,11 @@ TEST(BrokerTest, HandlesProduceRequestWritesToDisk) {
     std::ifstream f(log_path, std::ios::binary | std::ios::ate);
     ASSERT_TRUE(f.is_open());
     auto sz = f.tellg();
-    ASSERT_EQ(static_cast<size_t>(sz), record_batch.size());
+    ASSERT_EQ(static_cast<size_t>(sz), record_value.size());
     f.seekg(0);
     std::vector<uint8_t> readback(static_cast<size_t>(sz));
     f.read(reinterpret_cast<char*>(readback.data()), sz);
-    EXPECT_EQ(readback, record_batch);
+    EXPECT_EQ(readback, record_value);
 
     std::filesystem::remove_all(tmp_dir);
 }
@@ -682,7 +750,8 @@ TEST(BrokerTest, ProducesSequentialOffsets) {
     Broker broker(std::move(meta), tmp_dir);
 
     for (int batch = 0; batch < 3; ++batch) {
-        std::vector<uint8_t> records = {static_cast<uint8_t>(batch), 0x01, 0x02};
+        std::vector<uint8_t> records =
+            make_record_batch_v2({{static_cast<uint8_t>(batch), 0x01, 0x02}});
         RequestHeader header{0, 11, 100 + batch};
         ProduceRequest req{
             header,
@@ -741,7 +810,8 @@ TEST(BrokerTest, ProducesConcurrentSamePartition) {
     for (int t = 0; t < kThreads; ++t) {
         threads.emplace_back([&, t] {
             start.wait();
-            std::vector<uint8_t> records = {static_cast<uint8_t>(t), 0x01, 0x02, 0x03};
+            std::vector<uint8_t> records =
+                make_record_batch_v2({{static_cast<uint8_t>(t), 0x01, 0x02, 0x03}});
             RequestHeader header{0, 11, 1000 + t};
             ProduceRequest req{header,
                                {{.topic_name = "orders",
@@ -810,7 +880,8 @@ TEST(BrokerTest, ProducesConcurrentDifferentPartitions) {
         threads.emplace_back([&, p] {
             start.wait();
             for (int batch = 0; batch < 5; ++batch) {
-                std::vector<uint8_t> records = {static_cast<uint8_t>(batch), 0xFF};
+                std::vector<uint8_t> records =
+                    make_record_batch_v2({{static_cast<uint8_t>(batch), 0xFF}});
                 RequestHeader header{0, 11, 2000 + p * 100 + batch};
                 ProduceRequest req{header,
                                    {{.topic_name = "orders",
@@ -868,8 +939,10 @@ TEST(BrokerTest, FetchReturnsProducedRecords) {
     auto meta = make_meta_with_topic("orders", topic_uuid, {0, 1});
     Broker broker(std::move(meta), tmp_dir);
 
-    std::vector<uint8_t> batch0 = {0x00, 0x01, 0x02};
-    std::vector<uint8_t> batch1 = {0x03, 0x04, 0x05, 0x06};
+    std::vector<uint8_t> batch0_val = {0x00, 0x01, 0x02};
+    std::vector<uint8_t> batch1_val = {0x03, 0x04, 0x05, 0x06};
+    auto batch0 = make_record_batch_v2({batch0_val});
+    auto batch1 = make_record_batch_v2({batch1_val});
 
     {
         RequestHeader header{0, 11, 100};
@@ -897,9 +970,9 @@ TEST(BrokerTest, FetchReturnsProducedRecords) {
         ASSERT_EQ(r->responses.size(), 1u);
         ASSERT_EQ(r->responses[0].partitions.size(), 2u);
         EXPECT_EQ(r->responses[0].partitions[0].error_code, 0);
-        EXPECT_EQ(r->responses[0].partitions[0].records, batch0);
+        EXPECT_EQ(r->responses[0].partitions[0].records, batch0_val);
         EXPECT_EQ(r->responses[0].partitions[1].error_code, 0);
-        EXPECT_EQ(r->responses[0].partitions[1].records, batch1);
+        EXPECT_EQ(r->responses[0].partitions[1].records, batch1_val);
     }
 
     std::filesystem::remove_all(tmp_dir);
@@ -1007,9 +1080,10 @@ TEST(BrokerTest, HandlesListOffsetsEarliestLatest) {
 
     {
         RequestHeader header{0, 11, 100};
-        ProduceRequest req{header,
-                           {{.topic_name = "orders",
-                             .partitions = {{.partition_index = 0, .records = {0x01, 0x02}}}}}};
+        auto batch = make_record_batch_v2({{0x01, 0x02}});
+        ProduceRequest req{
+            header,
+            {{.topic_name = "orders", .partitions = {{.partition_index = 0, .records = batch}}}}};
         broker.handle(req);
     }
 
@@ -1044,4 +1118,34 @@ TEST(BrokerTest, HandlesListOffsetsEarliestLatest) {
     }
 
     std::filesystem::remove_all(tmp_dir);
+}
+
+TEST(BrokerTest, ParseRecordBatchSingleRecord) {
+    auto batch = make_record_batch_v2({{0x01, 0x02, 0x03}});
+    auto result = parse_record_batch(batch);
+    ASSERT_TRUE(result.has_value());
+    ASSERT_EQ(result->size(), 1u);
+    EXPECT_EQ((*result)[0], std::vector<uint8_t>({0x01, 0x02, 0x03}));
+}
+
+TEST(BrokerTest, ParseRecordBatchMultiRecord) {
+    auto batch = make_record_batch_v2({{0x01}, {0x02, 0x03}, {0x04}});
+    auto result = parse_record_batch(batch);
+    ASSERT_TRUE(result.has_value());
+    ASSERT_EQ(result->size(), 3u);
+    EXPECT_EQ((*result)[0], std::vector<uint8_t>({0x01}));
+    EXPECT_EQ((*result)[1], std::vector<uint8_t>({0x02, 0x03}));
+    EXPECT_EQ((*result)[2], std::vector<uint8_t>({0x04}));
+}
+
+TEST(BrokerTest, ParseRecordBatchInvalidMagic) {
+    std::vector<uint8_t> batch = make_record_batch_v2({{0x01}});
+    batch[16] = 0x01;
+    auto result = parse_record_batch(batch);
+    EXPECT_FALSE(result.has_value());
+}
+
+TEST(BrokerTest, ParseRecordBatchEmptyData) {
+    auto result = parse_record_batch(std::span<const uint8_t>{});
+    EXPECT_FALSE(result.has_value());
 }

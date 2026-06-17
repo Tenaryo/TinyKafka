@@ -10,7 +10,7 @@ namespace {
 
 constexpr uint32_t kTopicRecordKey = 2;
 constexpr uint32_t kPartitionRecordKey = 3;
-constexpr size_t kRecordBatchHeaderSize = 61;
+constexpr size_t kRecordBatchHeaderSize = 57;
 constexpr size_t kUuidSize = 16;
 
 struct RawTopicRecord {
@@ -61,10 +61,11 @@ auto parse_cluster_metadata(std::span<const uint8_t> data)
         if (!skip_attrs) {
             break;
         }
-        auto skip_offset_delta = reader.skip(4);
-        if (!skip_offset_delta) {
+        auto last_offset_delta = reader.read_int32();
+        if (!last_offset_delta) {
             break;
         }
+        int32_t record_count = *last_offset_delta + 1;
         auto skip_base_ts = reader.skip(8);
         if (!skip_base_ts) {
             break;
@@ -86,12 +87,7 @@ auto parse_cluster_metadata(std::span<const uint8_t> data)
             break;
         }
 
-        auto record_count = reader.read_int32();
-        if (!record_count || *record_count < 0) {
-            break;
-        }
-
-        for (int32_t i = 0; i < *record_count; ++i) {
+        for (int32_t i = 0; i < record_count; ++i) {
             if (reader.offset() >= batch_end) {
                 break;
             }
