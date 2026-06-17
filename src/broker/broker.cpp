@@ -4,7 +4,6 @@
 
 #include "protocol/api_registry.hpp"
 #include "protocol/response.hpp"
-#include "storage/log_reader.hpp"
 #include "util/overloaded.hpp"
 
 auto Broker::build_topic_metadata(const std::string& topic_name) const -> TopicMetadata {
@@ -156,11 +155,10 @@ auto Broker::handle(const Request& req) -> Response {
                         std::vector<FetchPartitionResponse> parts;
                         parts.reserve(topic_req.partitions.size());
                         for (const auto& part_req : topic_req.partitions) {
-                            auto records = storage::read_topic_log(
-                                log_root_, info->name, part_req.partition_index);
+                            auto& ctx = get_or_create_context(info->name, part_req.partition_index);
                             parts.push_back({.partition_index = part_req.partition_index,
                                              .error_code = 0,
-                                             .records = std::move(records)});
+                                             .records = ctx.fetch()});
                         }
                         topic_responses.push_back(
                             {.topic_id = topic_req.topic_id, .partitions = std::move(parts)});

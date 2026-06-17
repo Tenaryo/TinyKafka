@@ -4,7 +4,9 @@
 #include <mutex>
 #include <span>
 #include <string>
+#include <vector>
 
+#include "storage/log_reader.hpp"
 #include "storage/log_writer.hpp"
 
 namespace broker {
@@ -24,6 +26,11 @@ class PartitionContext {
         }
         ++next_offset_;
         return offset;
+    }
+
+    [[nodiscard]] auto fetch() -> std::vector<uint8_t> {
+        std::lock_guard lock(mutex_);
+        return storage::read_topic_log(log_root_, topic_name_, partition_);
     }
   private:
     std::string log_root_;
