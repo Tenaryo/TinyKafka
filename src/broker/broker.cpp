@@ -102,18 +102,26 @@ auto Broker::handle(const Request& req) -> Response {
                     for (const auto& part_req : topic_req.partitions) {
                         if (info && std::ranges::find(info->partitions, part_req.partition_index) !=
                                         info->partitions.end()) {
+                            int16_t error_code = 0;
+                            int64_t base_offset = 0;
+                            int64_t log_start_offset = 0;
                             if (!part_req.records.empty()) {
-                                [[maybe_unused]] auto ec = storage::write_topic_log(log_root_,
-                                                         topic_req.topic_name,
-                                                         part_req.partition_index,
-                                                         part_req.records);
+                                auto ec = storage::write_topic_log(log_root_,
+                                                                   topic_req.topic_name,
+                                                                   part_req.partition_index,
+                                                                   part_req.records);
+                                if (ec) {
+                                    error_code = 56;
+                                    base_offset = -1;
+                                    log_start_offset = -1;
+                                }
                             }
                             parts.push_back(ProducePartitionResponse{
                                 .partition_index = part_req.partition_index,
-                                .error_code = 0,
-                                .base_offset = 0,
+                                .error_code = error_code,
+                                .base_offset = base_offset,
                                 .log_append_time_ms = -1,
-                                .log_start_offset = 0,
+                                .log_start_offset = log_start_offset,
                             });
                         } else {
                             parts.push_back(ProducePartitionResponse{

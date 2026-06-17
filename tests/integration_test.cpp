@@ -1,4 +1,5 @@
 #include <array>
+#include <atomic>
 #include <cerrno>
 #include <csignal>
 #include <cstdint>
@@ -34,6 +35,14 @@ std::string find_server_binary() {
         throw std::runtime_error("Server binary not found at: " + server_path.string());
     }
     return server_path.string();
+}
+
+auto make_unique_temp_dir() -> std::string {
+    static std::atomic<int> counter{0};
+    auto path = std::filesystem::temp_directory_path() /
+                ("tinytk_int_" + std::to_string(getpid()) + "_" + std::to_string(++counter));
+    std::filesystem::create_directories(path);
+    return path.string();
 }
 
 int connect_to_server() {
@@ -114,7 +123,7 @@ auto build_request_header(int32_t correlation_id,
 
 class ServerProcess {
   public:
-    ServerProcess() {
+    explicit ServerProcess(std::string log_root) : log_root_(std::move(log_root)) {
         auto bin_path = find_server_binary();
 
         pid_ = fork();
@@ -123,7 +132,8 @@ class ServerProcess {
         }
 
         if (pid_ == 0) {
-            execl(bin_path.c_str(), bin_path.c_str(), nullptr);
+            std::string arg = "--log.dirs=" + log_root_;
+            execl(bin_path.c_str(), bin_path.c_str(), arg.c_str(), nullptr);
             _exit(127);
         }
     }
@@ -134,6 +144,8 @@ class ServerProcess {
             int status{};
             waitpid(pid_, &status, 0);
         }
+        std::error_code ec;
+        std::filesystem::remove_all(log_root_, ec);
     }
 
     ServerProcess(const ServerProcess&) = delete;
@@ -151,6 +163,7 @@ class ServerProcess {
     }
   private:
     pid_t pid_{};
+    std::string log_root_;
 };
 
 void push_unsigned_varint(std::vector<uint8_t>& buf, uint32_t val) {
@@ -273,7 +286,8 @@ auto build_record_batch(const std::vector<std::vector<uint8_t>>& record_values)
 } // namespace
 
 TEST(IntegrationTest, ServerHandlesApiVersionsValidVersion) {
-    ServerProcess server;
+    auto log_root = make_unique_temp_dir();
+    ServerProcess server(log_root);
 
     int sock = server.connect_with_retry();
     ASSERT_GE(sock, 0) << "Failed to connect to server";
@@ -334,7 +348,8 @@ TEST(IntegrationTest, ServerHandlesApiVersionsValidVersion) {
 }
 
 TEST(IntegrationTest, ServerHandlesMultipleRequestsSameConnection) {
-    ServerProcess server;
+    auto log_root = make_unique_temp_dir();
+    ServerProcess server(log_root);
 
     int sock = server.connect_with_retry();
     ASSERT_GE(sock, 0) << "Failed to connect to server";
@@ -422,7 +437,8 @@ void verify_api_versions_response(int32_t expected_correlation_id,
 }
 
 TEST(IntegrationTest, ServerHandlesTwoConcurrentClients) {
-    ServerProcess server;
+    auto log_root = make_unique_temp_dir();
+    ServerProcess server(log_root);
 
     auto client_task = [&](int base_cid) {
         int sock = server.connect_with_retry();
@@ -463,7 +479,8 @@ TEST(IntegrationTest, ServerHandlesTwoConcurrentClients) {
 }
 
 TEST(IntegrationTest, ServerHandlesApiVersionsUnsupportedVersion) {
-    ServerProcess server;
+    auto log_root = make_unique_temp_dir();
+    ServerProcess server(log_root);
 
     int sock = server.connect_with_retry();
     ASSERT_GE(sock, 0) << "Failed to connect to server";
@@ -485,7 +502,8 @@ TEST(IntegrationTest, ServerHandlesApiVersionsUnsupportedVersion) {
 }
 
 TEST(IntegrationTest, ServerHandlesDescribeTopicPartitionsUnknownTopic) {
-    ServerProcess server;
+    auto log_root = make_unique_temp_dir();
+    ServerProcess server(log_root);
 
     int sock = server.connect_with_retry();
     ASSERT_GE(sock, 0) << "Failed to connect to server";
@@ -555,7 +573,8 @@ TEST(IntegrationTest, ServerHandlesDescribeTopicPartitionsUnknownTopic) {
 }
 
 TEST(IntegrationTest, ServerHandlesDescribeTopicPartitionsMultiTopicSorted) {
-    ServerProcess server;
+    auto log_root = make_unique_temp_dir();
+    ServerProcess server(log_root);
 
     int sock = server.connect_with_retry();
     ASSERT_GE(sock, 0) << "Failed to connect to server";
@@ -656,7 +675,8 @@ TEST(IntegrationTest, ServerHandlesDescribeTopicPartitionsMultiTopicSorted) {
 }
 
 TEST(IntegrationTest, ApiVersionsResponseContainsFetchApiEntry) {
-    ServerProcess server;
+    auto log_root = make_unique_temp_dir();
+    ServerProcess server(log_root);
 
     int sock = server.connect_with_retry();
     ASSERT_GE(sock, 0) << "Failed to connect to server";
@@ -725,7 +745,8 @@ TEST(IntegrationTest, ApiVersionsResponseContainsFetchApiEntry) {
 }
 
 TEST(IntegrationTest, ServerHandlesFetchRequestEmptyTopics) {
-    ServerProcess server;
+    auto log_root = make_unique_temp_dir();
+    ServerProcess server(log_root);
 
     int sock = server.connect_with_retry();
     ASSERT_GE(sock, 0) << "Failed to connect to server";
@@ -824,27 +845,26 @@ TEST(IntegrationTest, FetchResponseReturnsRecordBatchFromDisk) {
     };
 
     namespace fs = std::filesystem;
-    const char* root = "/tmp/kraft-combined-logs";
+    auto root = make_unique_temp_dir();
 
-    fs::create_directories(std::string(root) + "/__cluster_metadata-0");
+    fs::create_directories(root + "/__cluster_metadata-0");
     {
         auto topic_val = make_topic_record_value("bar", kTestUuid);
         auto part_val = make_partition_record_value(0, kTestUuid);
         auto batch = build_record_batch({topic_val, part_val});
-        std::ofstream f(std::string(root) + "/__cluster_metadata-0/00000000000000000000.log",
-                        std::ios::binary);
+        std::ofstream f(root + "/__cluster_metadata-0/00000000000000000000.log", std::ios::binary);
         f.write(reinterpret_cast<const char*>(batch.data()),
                 static_cast<std::streamsize>(batch.size()));
     }
 
-    fs::create_directories(std::string(root) + "/bar-0");
+    fs::create_directories(root + "/bar-0");
     {
-        std::ofstream f(std::string(root) + "/bar-0/00000000000000000000.log", std::ios::binary);
+        std::ofstream f(root + "/bar-0/00000000000000000000.log", std::ios::binary);
         f.write(reinterpret_cast<const char*>(record_batch_data.data()),
                 static_cast<std::streamsize>(record_batch_data.size()));
     }
 
-    ServerProcess server;
+    ServerProcess server(root);
 
     int sock = server.connect_with_retry();
     ASSERT_GE(sock, 0) << "Failed to connect to server";
@@ -1010,21 +1030,19 @@ TEST(IntegrationTest, ProduceRequestPersistsRecordBatchToDisk) {
     auto record_batch = build_record_batch({record_value});
 
     namespace fs = std::filesystem;
-    const char* root = "/tmp/kraft-combined-logs";
+    auto root = make_unique_temp_dir();
 
-    fs::remove_all(root);
-    fs::create_directories(std::string(root) + "/__cluster_metadata-0");
+    fs::create_directories(root + "/__cluster_metadata-0");
     {
         auto topic_val = make_topic_record_value("orders", kTopicUuid);
         auto part_val = make_partition_record_value(0, kTopicUuid);
         auto batch = build_record_batch({topic_val, part_val});
-        std::ofstream f(std::string(root) + "/__cluster_metadata-0/00000000000000000000.log",
-                        std::ios::binary);
+        std::ofstream f(root + "/__cluster_metadata-0/00000000000000000000.log", std::ios::binary);
         f.write(reinterpret_cast<const char*>(batch.data()),
                 static_cast<std::streamsize>(batch.size()));
     }
 
-    ServerProcess server;
+    ServerProcess server(root);
 
     int sock = server.connect_with_retry();
     ASSERT_GE(sock, 0) << "Failed to connect to server";
@@ -1155,7 +1173,7 @@ TEST(IntegrationTest, ProduceRequestPersistsRecordBatchToDisk) {
     EXPECT_EQ(log_start, 0) << "log_start_offset must be 0";
 
     // Verify disk persistence
-    auto log_path = std::string(root) + "/orders-0/00000000000000000000.log";
+    auto log_path = root + "/orders-0/00000000000000000000.log";
     EXPECT_TRUE(fs::exists(log_path));
 
     std::ifstream log_file(log_path, std::ios::binary | std::ios::ate);

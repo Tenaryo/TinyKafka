@@ -79,27 +79,25 @@ void EpollReactor::run() {
 }
 
 void EpollReactor::handle_accept() {
-    while (true) {
-        int client_fd = ::accept4(server_fd_, nullptr, nullptr, SOCK_NONBLOCK);
-        if (client_fd < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                break;
-            }
-            logging::error("accept4 failed: " + std::to_string(errno));
-            break;
-        }
-
-        epoll_event ev{};
-        ev.events = EPOLLIN;
-        ev.data.fd = client_fd;
-        if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, client_fd, &ev) < 0) [[unlikely]] {
-            logging::error("epoll_ctl ADD client failed: " + std::to_string(errno));
-            ::close(client_fd);
-            continue;
-        }
-
-        connections_[client_fd] = Connection{};
+    int client_fd = ::accept(server_fd_, nullptr, nullptr);
+    if (client_fd < 0) [[unlikely]] {
+        logging::error("accept failed: " + std::to_string(errno));
+        return;
     }
+
+    auto flags = ::fcntl(client_fd, F_GETFL, 0);
+    ::fcntl(client_fd, F_SETFL, flags | O_NONBLOCK); // NOLINT(cppcoreguidelines-pro-type-vararg)
+
+    epoll_event ev{};
+    ev.events = EPOLLIN;
+    ev.data.fd = client_fd;
+    if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, client_fd, &ev) < 0) [[unlikely]] {
+        logging::error("epoll_ctl ADD client failed: " + std::to_string(errno));
+        ::close(client_fd);
+        return;
+    }
+
+    connections_[client_fd] = Connection{};
 }
 
 void EpollReactor::handle_read(int fd) {
