@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -9,6 +10,13 @@
 #include "cluster/metadata.hpp"
 #include "protocol/request.hpp"
 #include "protocol/response.hpp"
+
+enum class GroupState : uint8_t {
+    Empty,
+    AwaitingSync,
+    Stable,
+    Dead,
+};
 
 class Broker {
   public:
@@ -35,6 +43,7 @@ class Broker {
         group_offsets_;
     std::unordered_map<std::string, std::vector<JoinGroupMember>> group_members_;
     std::unordered_map<std::string, int32_t> group_generations_;
+    std::unordered_map<std::string, GroupState> group_states_;
     std::unordered_map<std::string, std::unordered_map<std::string, std::vector<uint8_t>>>
         member_assignments_;
     int32_t next_member_id_{0};

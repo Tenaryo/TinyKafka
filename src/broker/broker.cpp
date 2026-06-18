@@ -186,6 +186,8 @@ auto Broker::handle(const Request& req) -> Response {
                     ++gen;
                 }
 
+                group_states_[r.group_id] = GroupState::AwaitingSync;
+
                 std::string leader = members[0].member_id;
                 std::string proto_name;
                 if (!r.protocols.empty()) {
@@ -212,6 +214,12 @@ auto Broker::handle(const Request& req) -> Response {
                     error_code = 82;
                 }
 
+                auto state_it = group_states_.find(r.group_id);
+                if (error_code == 0 &&
+                    (state_it == group_states_.end() || state_it->second != GroupState::Stable)) {
+                    error_code = 82;
+                }
+
                 return HeartbeatResponse{
                     .correlation_id = r.header.correlation_id,
                     .throttle_time_ms = 0,
@@ -231,6 +239,7 @@ auto Broker::handle(const Request& req) -> Response {
                     for (const auto& a : r.assignments) {
                         member_assignments_[r.group_id][a.member_id] = a.assignment;
                     }
+                    group_states_[r.group_id] = GroupState::Stable;
                     auto self_it = member_assignments_[r.group_id].find(r.member_id);
                     if (self_it != member_assignments_[r.group_id].end()) {
                         assignment = self_it->second;
