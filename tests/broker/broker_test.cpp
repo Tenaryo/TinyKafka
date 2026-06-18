@@ -1282,3 +1282,37 @@ TEST(BrokerTest, HandlesSyncGroupLeaderAndFollower) {
         EXPECT_EQ(r->error_code, 82);
     }
 }
+
+TEST(BrokerTest, HandlesHeartbeatValidAndInvalidGeneration) {
+    Broker broker(ClusterMetadata{}, "");
+
+    std::string member;
+    {
+        RequestHeader header{11, 0, 42};
+        JoinGroupRequest req{header, "hb", 30000, "", "consumer", {{"range", {}}}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<JoinGroupResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 0);
+        EXPECT_EQ(r->generation_id, 1);
+        member = r->member_id;
+    }
+
+    {
+        RequestHeader header{12, 0, 43};
+        HeartbeatRequest req{header, "hb", 1, member, {}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<HeartbeatResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 0);
+    }
+
+    {
+        RequestHeader header{12, 0, 44};
+        HeartbeatRequest req{header, "hb", 99, member, {}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<HeartbeatResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 82);
+    }
+}

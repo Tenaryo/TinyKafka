@@ -1029,3 +1029,39 @@ TEST(ParserTest, ParsesSyncGroupRequest) {
     ASSERT_EQ(req->assignments.size(), 1u);
     EXPECT_EQ(req->assignments[0].member_id, "m2");
 }
+
+TEST(ParserTest, ParsesHeartbeatRequest) {
+    std::vector<std::uint8_t> buf;
+    auto pb16 = [&](int16_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto pb32 = [&](int32_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+
+    pb16(12);
+    pb16(0);
+    pb32(42);
+    pb16(-1);
+    buf.push_back(0x00);
+    buf.push_back(0x02);
+    buf.push_back('g');
+    pb32(1);
+    buf.push_back(0x02);
+    buf.push_back('m');
+    buf.push_back(0x01);
+    buf.push_back(0x00);
+
+    auto result = parse_request(buf);
+    ASSERT_TRUE(result.has_value());
+    auto req = std::get_if<HeartbeatRequest>(&*result);
+    ASSERT_NE(req, nullptr);
+    EXPECT_EQ(req->header.api_key, 12);
+    EXPECT_EQ(req->group_id, "g");
+    EXPECT_EQ(req->generation_id, 1);
+    EXPECT_EQ(req->member_id, "m");
+}

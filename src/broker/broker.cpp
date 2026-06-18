@@ -203,6 +203,21 @@ auto Broker::handle(const Request& req) -> Response {
                     .members = members,
                 };
             },
+            [this](const HeartbeatRequest& r) -> Response {
+                std::lock_guard lock(contexts_mutex_);
+
+                int16_t error_code = 0;
+                auto gen_it = group_generations_.find(r.group_id);
+                if (gen_it == group_generations_.end() || gen_it->second != r.generation_id) {
+                    error_code = 82;
+                }
+
+                return HeartbeatResponse{
+                    .correlation_id = r.header.correlation_id,
+                    .throttle_time_ms = 0,
+                    .error_code = error_code,
+                };
+            },
             [this](const SyncGroupRequest& r) -> Response {
                 std::lock_guard lock(contexts_mutex_);
 

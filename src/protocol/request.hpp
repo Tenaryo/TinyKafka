@@ -136,10 +136,19 @@ struct SyncGroupRequest {
     std::vector<SyncGroupAssignment> assignments;
 };
 
+struct HeartbeatRequest {
+    RequestHeader header;
+    std::string group_id;
+    int32_t generation_id = -1;
+    std::string member_id;
+    std::string group_instance_id;
+};
+
 using Request = std::variant<ApiVersionsRequest,
                              DescribeTopicPartitionsRequest,
                              FetchRequest,
                              FindCoordinatorRequest,
+                             HeartbeatRequest,
                              JoinGroupRequest,
                              ListOffsetsRequest,
                              MetadataRequest,

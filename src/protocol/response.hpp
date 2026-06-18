@@ -196,10 +196,17 @@ struct SyncGroupResponse {
     std::vector<uint8_t> assignment;
 };
 
+struct HeartbeatResponse {
+    int32_t correlation_id;
+    int32_t throttle_time_ms;
+    int16_t error_code;
+};
+
 using Response = std::variant<ApiVersionsResponse,
                               DescribeTopicPartitionsResponse,
                               FetchResponse,
                               FindCoordinatorResponse,
+                              HeartbeatResponse,
                               JoinGroupResponse,
                               ListOffsetsResponse,
                               MetadataResponse,
