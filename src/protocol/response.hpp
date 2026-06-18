@@ -171,10 +171,27 @@ struct OffsetFetchResponse {
     std::vector<OffsetFetchTopicResponse> topics;
 };
 
+struct JoinGroupMember {
+    std::string member_id;
+    std::vector<uint8_t> metadata;
+};
+
+struct JoinGroupResponse {
+    int32_t correlation_id;
+    int32_t throttle_time_ms;
+    int16_t error_code;
+    int32_t generation_id;
+    std::string protocol_name;
+    std::string leader;
+    std::string member_id;
+    std::vector<JoinGroupMember> members;
+};
+
 using Response = std::variant<ApiVersionsResponse,
                               DescribeTopicPartitionsResponse,
                               FetchResponse,
                               FindCoordinatorResponse,
+                              JoinGroupResponse,
                               ListOffsetsResponse,
                               MetadataResponse,
                               OffsetCommitResponse,

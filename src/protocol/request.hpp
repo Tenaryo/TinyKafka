@@ -109,10 +109,25 @@ struct OffsetFetchRequest {
     std::vector<OffsetFetchTopicRequest> topics;
 };
 
+struct JoinGroupProtocol {
+    std::string name;
+    std::vector<uint8_t> metadata;
+};
+
+struct JoinGroupRequest {
+    RequestHeader header;
+    std::string group_id;
+    int32_t session_timeout_ms = 0;
+    std::string member_id;
+    std::string protocol_type;
+    std::vector<JoinGroupProtocol> protocols;
+};
+
 using Request = std::variant<ApiVersionsRequest,
                              DescribeTopicPartitionsRequest,
                              FetchRequest,
                              FindCoordinatorRequest,
+                             JoinGroupRequest,
                              ListOffsetsRequest,
                              MetadataRequest,
                              OffsetCommitRequest,

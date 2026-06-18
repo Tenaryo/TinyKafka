@@ -33,4 +33,7 @@ class Broker {
     std::unordered_map<std::string,
                        std::unordered_map<std::string, std::unordered_map<int32_t, int64_t>>>
         group_offsets_;
+    std::unordered_map<std::string, std::vector<JoinGroupMember>> group_members_;
+    std::unordered_map<std::string, int32_t> group_generations_;
+    int32_t next_member_id_{0};
 };

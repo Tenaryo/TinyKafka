@@ -1210,3 +1210,29 @@ TEST(BrokerTest, HandlesOffsetFetchEndToEnd) {
         EXPECT_EQ(r->topics[0].partitions[0].committed_offset, 100);
     }
 }
+
+TEST(BrokerTest, HandlesJoinGroupNewMember) {
+    Broker broker(ClusterMetadata{}, "");
+
+    {
+        RequestHeader header{11, 0, 42};
+        JoinGroupRequest req{header, "g", 30000, "", "consumer", {{"range", {}}}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<JoinGroupResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 0);
+        EXPECT_EQ(r->generation_id, 1);
+        EXPECT_FALSE(r->member_id.empty());
+        EXPECT_EQ(r->leader, r->member_id);
+        ASSERT_EQ(r->members.size(), 1u);
+    }
+
+    {
+        RequestHeader header{11, 0, 43};
+        JoinGroupRequest req{header, "g", 30000, "", "consumer", {{"range", {}}}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<JoinGroupResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->generation_id, 2);
+    }
+}

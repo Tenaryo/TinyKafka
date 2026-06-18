@@ -295,13 +295,13 @@ TEST(IntegrationTest, ServerHandlesApiVersionsValidVersion) {
     auto sent = send(sock, request.data(), request.size(), 0);
     ASSERT_GE(sent, 0) << "Failed to send request";
 
-    auto response = read_exactly<79>(sock);
+    auto response = read_exactly<86>(sock);
     close(sock);
 
     EXPECT_EQ(response[0], 0x00);
     EXPECT_EQ(response[1], 0x00);
     EXPECT_EQ(response[2], 0x00);
-    EXPECT_EQ(response[3], 0x4B); // message_size = 75
+    EXPECT_EQ(response[3], 0x52); // message_size = 82
 
     int32_t echoed_correlation_id =
         decode_int32_be_response(std::span<const uint8_t, 4>{response.data() + 4, 4});
@@ -310,7 +310,7 @@ TEST(IntegrationTest, ServerHandlesApiVersionsValidVersion) {
     int16_t error_code = static_cast<int16_t>((static_cast<int16_t>(response[8]) << 8) |
                                               static_cast<int16_t>(response[9]));
     EXPECT_EQ(error_code, 0);
-    EXPECT_EQ(response[10], 0x0A); // compact array length = 9 (varint: 9+1=10=0x0A)
+    EXPECT_EQ(response[10], 0x0B); // compact array length = 10 (varint: 10+1=11=0x0B)
     EXPECT_EQ(response[11], 0x00);
     EXPECT_EQ(response[12], 0x00); // api_key = 0 (Produce)
     EXPECT_EQ(response[13], 0x00);
@@ -361,24 +361,31 @@ TEST(IntegrationTest, ServerHandlesApiVersionsValidVersion) {
     EXPECT_EQ(response[58], 0x04); // max_version = 4
     EXPECT_EQ(response[59], 0x00); // TAG_BUFFER (entry 6)
     EXPECT_EQ(response[60], 0x00);
-    EXPECT_EQ(response[61], 0x12); // api_key = 18 (ApiVersions)
+    EXPECT_EQ(response[61], 0x0B); // api_key = 11 (JoinGroup)
     EXPECT_EQ(response[62], 0x00);
     EXPECT_EQ(response[63], 0x00); // min_version = 0
     EXPECT_EQ(response[64], 0x00);
-    EXPECT_EQ(response[65], 0x04); // max_version = 4
+    EXPECT_EQ(response[65], 0x09); // max_version = 9
     EXPECT_EQ(response[66], 0x00); // TAG_BUFFER (entry 7)
     EXPECT_EQ(response[67], 0x00);
-    EXPECT_EQ(response[68], 0x4B); // api_key = 75 (DescribeTopicPartitions)
+    EXPECT_EQ(response[68], 0x12); // api_key = 18 (ApiVersions)
     EXPECT_EQ(response[69], 0x00);
     EXPECT_EQ(response[70], 0x00); // min_version = 0
     EXPECT_EQ(response[71], 0x00);
-    EXPECT_EQ(response[72], 0x00); // max_version = 0
+    EXPECT_EQ(response[72], 0x04); // max_version = 4
     EXPECT_EQ(response[73], 0x00); // TAG_BUFFER (entry 8)
     EXPECT_EQ(response[74], 0x00);
-    EXPECT_EQ(response[75], 0x00);
+    EXPECT_EQ(response[75], 0x4B); // api_key = 75 (DescribeTopicPartitions)
     EXPECT_EQ(response[76], 0x00);
-    EXPECT_EQ(response[77], 0x00); // throttle_time_ms = 0
-    EXPECT_EQ(response[78], 0x00); // TAG_BUFFER
+    EXPECT_EQ(response[77], 0x00); // min_version = 0
+    EXPECT_EQ(response[78], 0x00);
+    EXPECT_EQ(response[79], 0x00); // max_version = 0
+    EXPECT_EQ(response[80], 0x00); // TAG_BUFFER (entry 9)
+    EXPECT_EQ(response[81], 0x00);
+    EXPECT_EQ(response[82], 0x00);
+    EXPECT_EQ(response[83], 0x00);
+    EXPECT_EQ(response[84], 0x00); // throttle_time_ms = 0
+    EXPECT_EQ(response[85], 0x00); // TAG_BUFFER
 }
 
 TEST(IntegrationTest, ServerHandlesMultipleRequestsSameConnection) {
@@ -1531,6 +1538,85 @@ TEST(IntegrationTest, ServerHandlesOffsetFetchRequest) {
     request.push_back('t');
     request.push_back(0x02);
     pb32(0);
+    request.push_back(0x00);
+    request.push_back(0x00);
+
+    int32_t message_len = static_cast<int32_t>(request.size() - body_start);
+    request[0] = static_cast<uint8_t>((message_len >> 24) & 0xFF);
+    request[1] = static_cast<uint8_t>((message_len >> 16) & 0xFF);
+    request[2] = static_cast<uint8_t>((message_len >> 8) & 0xFF);
+    request[3] = static_cast<uint8_t>(message_len & 0xFF);
+
+    auto sent = send(sock, request.data(), request.size(), 0);
+    ASSERT_GE(sent, 0);
+
+    auto len_prefix = read_exactly<4>(sock);
+    int32_t resp_msg_len = decode_int32_be_response(len_prefix);
+    EXPECT_GT(resp_msg_len, 0);
+
+    std::vector<uint8_t> body(resp_msg_len);
+    size_t total = 0;
+    while (total < body.size()) {
+        auto n = read(sock, body.data() + total, body.size() - total);
+        ASSERT_GT(n, 0);
+        total += static_cast<size_t>(n);
+    }
+    close(sock);
+
+    int32_t echoed_cid = (static_cast<int32_t>(body[0]) << 24) |
+                         (static_cast<int32_t>(body[1]) << 16) |
+                         (static_cast<int32_t>(body[2]) << 8) | static_cast<int32_t>(body[3]);
+    EXPECT_EQ(echoed_cid, kTestCorrelationId);
+}
+
+TEST(IntegrationTest, ServerHandlesJoinGroupRequest) {
+    auto log_root = make_unique_temp_dir();
+    ServerProcess server(log_root);
+
+    int sock = server.connect_with_retry();
+    ASSERT_GE(sock, 0);
+
+    std::vector<uint8_t> request;
+    auto pb16 = [&](int16_t v) {
+        request.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        request.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto pb32 = [&](int32_t v) {
+        request.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+        request.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        request.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        request.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+
+    pb32(0);
+    size_t body_start = request.size();
+    pb16(11);
+    pb16(0);
+    pb32(kTestCorrelationId);
+    pb16(-1);
+    request.push_back(0x00);
+    request.push_back(0x02);
+    request.push_back('g');
+    pb32(30000);
+    request.push_back(0x01);
+    request.push_back(0x09);
+    request.push_back('c');
+    request.push_back('o');
+    request.push_back('n');
+    request.push_back('s');
+    request.push_back('u');
+    request.push_back('m');
+    request.push_back('e');
+    request.push_back('r');
+    request.push_back(0x02);
+    request.push_back(0x06);
+    request.push_back('r');
+    request.push_back('a');
+    request.push_back('n');
+    request.push_back('g');
+    request.push_back('e');
+    request.push_back(0x02);
+    request.push_back(0x01);
     request.push_back(0x00);
     request.push_back(0x00);
 

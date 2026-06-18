@@ -409,6 +409,53 @@ auto serialize(const Response& resp) -> std::vector<std::uint8_t> {
                 writer.write_int8(0x00);
                 return buf;
             },
+            [](const JoinGroupResponse& r) -> std::vector<std::uint8_t> {
+                size_t body_size = 4 + 1 + 4 + 2 + 4;
+                uint32_t proto_varint =
+                    r.protocol_name.empty() ? 0 : static_cast<uint32_t>(r.protocol_name.size()) + 1;
+                body_size += varint_encoded_size(proto_varint) + r.protocol_name.size();
+                uint32_t leader_varint = static_cast<uint32_t>(r.leader.size()) + 1;
+                body_size += varint_encoded_size(leader_varint) + r.leader.size();
+                uint32_t member_varint = static_cast<uint32_t>(r.member_id.size()) + 1;
+                body_size += varint_encoded_size(member_varint) + r.member_id.size();
+                body_size += varint_encoded_size(static_cast<uint32_t>(r.members.size()) + 1);
+                for (const auto& m : r.members) {
+                    uint32_t mid_varint = static_cast<uint32_t>(m.member_id.size()) + 1;
+                    body_size += varint_encoded_size(mid_varint) + m.member_id.size();
+                    body_size += varint_encoded_size(static_cast<uint32_t>(m.metadata.size()) + 1);
+                    body_size += m.metadata.size();
+                    body_size += 1;
+                }
+                body_size += 1;
+
+                std::vector<uint8_t> buf(4 + body_size);
+                ByteWriter writer(buf);
+
+                writer.write_int32(static_cast<int32_t>(body_size));
+                writer.write_int32(r.correlation_id);
+                writer.write_int8(0x00);
+                writer.write_int32(r.throttle_time_ms);
+                writer.write_int16(r.error_code);
+                writer.write_int32(r.generation_id);
+                if (r.protocol_name.empty()) {
+                    writer.write_varint(0);
+                } else {
+                    writer.write_compact_string(r.protocol_name);
+                }
+                writer.write_compact_string(r.leader);
+                writer.write_compact_string(r.member_id);
+                writer.write_varint(static_cast<uint32_t>(r.members.size()) + 1);
+                for (const auto& m : r.members) {
+                    writer.write_compact_string(m.member_id);
+                    writer.write_varint(static_cast<uint32_t>(m.metadata.size()) + 1);
+                    if (!m.metadata.empty()) {
+                        writer.write_bytes(m.metadata);
+                    }
+                    writer.write_int8(0x00);
+                }
+                writer.write_int8(0x00);
+                return buf;
+            },
             [](const ProduceResponse& r) -> std::vector<std::uint8_t> {
                 size_t body_size = 4 + 1;
                 body_size += varint_encoded_size(static_cast<uint32_t>(r.responses.size()) + 1);

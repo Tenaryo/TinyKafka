@@ -155,6 +155,54 @@ auto Broker::handle(const Request& req) -> Response {
                     .topics = std::move(topic_responses),
                 };
             },
+            [this](const JoinGroupRequest& r) -> Response {
+                std::lock_guard lock(contexts_mutex_);
+
+                std::string member = r.member_id;
+                if (member.empty()) {
+                    member = "member-" + std::to_string(++next_member_id_);
+                }
+
+                auto& members = group_members_[r.group_id];
+                bool found = false;
+                for (const auto& m : members) {
+                    if (m.member_id == member) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    std::vector<uint8_t> metadata;
+                    if (!r.protocols.empty()) {
+                        metadata = r.protocols[0].metadata;
+                    }
+                    members.push_back({.member_id = member, .metadata = std::move(metadata)});
+                }
+
+                auto& gen = group_generations_[r.group_id];
+                if (gen == 0) {
+                    gen = 1;
+                } else {
+                    ++gen;
+                }
+
+                std::string leader = members[0].member_id;
+                std::string proto_name;
+                if (!r.protocols.empty()) {
+                    proto_name = r.protocols[0].name;
+                }
+
+                return JoinGroupResponse{
+                    .correlation_id = r.header.correlation_id,
+                    .throttle_time_ms = 0,
+                    .error_code = 0,
+                    .generation_id = gen,
+                    .protocol_name = proto_name,
+                    .leader = leader,
+                    .member_id = member,
+                    .members = members,
+                };
+            },
             [this](const MetadataRequest& r) -> Response {
                 std::vector<MetadataTopicResponse> topics;
                 if (r.topics.empty()) {

@@ -666,6 +666,83 @@ auto parse_request(std::span<const std::uint8_t> buf) -> std::expected<Request, 
             static_cast<int8_t>(*key_type),
         };
     }
+    case 11: {
+        auto client_id_len = reader.read_int16();
+        if (!client_id_len) {
+            return std::unexpected(client_id_len.error());
+        }
+        if (*client_id_len > 0) {
+            auto skip_client = reader.skip(static_cast<size_t>(*client_id_len));
+            if (!skip_client) {
+                return std::unexpected(skip_client.error());
+            }
+        }
+        auto header_tag = reader.skip(1);
+        if (!header_tag) {
+            return std::unexpected(header_tag.error());
+        }
+
+        auto group_id = reader.read_compact_string();
+        if (!group_id) {
+            return std::unexpected(group_id.error());
+        }
+        auto session_timeout = reader.read_int32();
+        if (!session_timeout) {
+            return std::unexpected(session_timeout.error());
+        }
+        auto member_id = reader.read_compact_string();
+        if (!member_id) {
+            return std::unexpected(member_id.error());
+        }
+        auto protocol_type = reader.read_compact_string();
+        if (!protocol_type) {
+            return std::unexpected(protocol_type.error());
+        }
+
+        auto proto_array_len = reader.read_varint();
+        if (!proto_array_len) {
+            return std::unexpected(proto_array_len.error());
+        }
+        uint32_t proto_count = *proto_array_len > 0 ? *proto_array_len - 1 : 0;
+
+        std::vector<JoinGroupProtocol> protocols;
+        protocols.reserve(proto_count);
+        for (uint32_t pi = 0; pi < proto_count; ++pi) {
+            auto name = reader.read_compact_string();
+            if (!name) {
+                return std::unexpected(name.error());
+            }
+            auto metadata_len = reader.read_varint();
+            if (!metadata_len) {
+                return std::unexpected(metadata_len.error());
+            }
+            std::vector<uint8_t> metadata;
+            if (*metadata_len > 1) {
+                auto md = reader.read_bytes(static_cast<size_t>(*metadata_len - 1));
+                if (!md) {
+                    return std::unexpected(md.error());
+                }
+                metadata.assign(md->begin(), md->end());
+            }
+            auto skip_proto_tag = reader.skip(1);
+            if (!skip_proto_tag) {
+                return std::unexpected(skip_proto_tag.error());
+            }
+            protocols.push_back({.name = std::move(*name), .metadata = std::move(metadata)});
+        }
+
+        auto body_tag = reader.skip(1);
+        if (!body_tag) {
+            return std::unexpected(body_tag.error());
+        }
+
+        return JoinGroupRequest{RequestHeader{*api_key, *api_version, *correlation_id},
+                                std::move(*group_id),
+                                *session_timeout,
+                                std::move(*member_id),
+                                std::move(*protocol_type),
+                                std::move(protocols)};
+    }
     default:
         return std::unexpected(make_error_code(std::errc::function_not_supported));
     }

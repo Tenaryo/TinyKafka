@@ -4,7 +4,7 @@
 
 #include "protocol/response.hpp"
 
-inline constexpr std::array<ApiVersionEntry, 9> kSupportedApis{{
+inline constexpr std::array<ApiVersionEntry, 10> kSupportedApis{{
     {.api_key = 0, .min_version = 0, .max_version = 11},
     {.api_key = 1, .min_version = 0, .max_version = 16},
     {.api_key = 2, .min_version = 0, .max_version = 8},
@@ -12,6 +12,7 @@ inline constexpr std::array<ApiVersionEntry, 9> kSupportedApis{{
     {.api_key = 8, .min_version = 0, .max_version = 8},
     {.api_key = 9, .min_version = 0, .max_version = 8},
     {.api_key = 10, .min_version = 0, .max_version = 4},
+    {.api_key = 11, .min_version = 0, .max_version = 9},
     {.api_key = 18, .min_version = 0, .max_version = 4},
     {.api_key = 75, .min_version = 0, .max_version = 0},
 }};
