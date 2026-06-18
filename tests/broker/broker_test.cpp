@@ -1236,3 +1236,49 @@ TEST(BrokerTest, HandlesJoinGroupNewMember) {
         EXPECT_EQ(r->generation_id, 2);
     }
 }
+
+TEST(BrokerTest, HandlesSyncGroupLeaderAndFollower) {
+    Broker broker(ClusterMetadata{}, "");
+
+    std::string leader_member;
+    {
+        RequestHeader header{11, 0, 42};
+        JoinGroupRequest req{header, "sg", 30000, "", "consumer", {{"range", {}}}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<JoinGroupResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 0);
+        EXPECT_EQ(r->generation_id, 1);
+        leader_member = r->member_id;
+    }
+
+    {
+        RequestHeader header{14, 0, 43};
+        SyncGroupRequest req{header, "sg", 1, leader_member, {{"m1", {0x01}}}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<SyncGroupResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 0);
+        EXPECT_TRUE(r->assignment.empty());
+    }
+
+    {
+        RequestHeader header{14, 0, 44};
+        SyncGroupRequest req{header, "sg", 1, "m1", {}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<SyncGroupResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 0);
+        ASSERT_EQ(r->assignment.size(), 1u);
+        EXPECT_EQ(r->assignment[0], 0x01);
+    }
+
+    {
+        RequestHeader header{14, 0, 45};
+        SyncGroupRequest req{header, "sg", 99, leader_member, {}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<SyncGroupResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 82);
+    }
+}

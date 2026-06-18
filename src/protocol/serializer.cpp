@@ -456,6 +456,42 @@ auto serialize(const Response& resp) -> std::vector<std::uint8_t> {
                 writer.write_int8(0x00);
                 return buf;
             },
+            [](const SyncGroupResponse& r) -> std::vector<std::uint8_t> {
+                uint32_t pt_varint =
+                    r.protocol_type.empty() ? 0 : static_cast<uint32_t>(r.protocol_type.size()) + 1;
+                uint32_t pn_varint =
+                    r.protocol_name.empty() ? 0 : static_cast<uint32_t>(r.protocol_name.size()) + 1;
+                size_t body_size =
+                    4 + 1 + 4 + 2 + varint_encoded_size(pt_varint) + r.protocol_type.size() +
+                    varint_encoded_size(pn_varint) + r.protocol_name.size() +
+                    varint_encoded_size(static_cast<uint32_t>(r.assignment.size()) + 1) +
+                    r.assignment.size() + 1;
+
+                std::vector<uint8_t> buf(4 + body_size);
+                ByteWriter writer(buf);
+
+                writer.write_int32(static_cast<int32_t>(body_size));
+                writer.write_int32(r.correlation_id);
+                writer.write_int8(0x00);
+                writer.write_int32(r.throttle_time_ms);
+                writer.write_int16(r.error_code);
+                if (r.protocol_type.empty()) {
+                    writer.write_varint(0);
+                } else {
+                    writer.write_compact_string(r.protocol_type);
+                }
+                if (r.protocol_name.empty()) {
+                    writer.write_varint(0);
+                } else {
+                    writer.write_compact_string(r.protocol_name);
+                }
+                writer.write_varint(static_cast<uint32_t>(r.assignment.size()) + 1);
+                if (!r.assignment.empty()) {
+                    writer.write_bytes(r.assignment);
+                }
+                writer.write_int8(0x00);
+                return buf;
+            },
             [](const ProduceResponse& r) -> std::vector<std::uint8_t> {
                 size_t body_size = 4 + 1;
                 body_size += varint_encoded_size(static_cast<uint32_t>(r.responses.size()) + 1);

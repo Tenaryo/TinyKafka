@@ -824,3 +824,20 @@ TEST(SerializerTest, SerializesJoinGroupResponse) {
                              (static_cast<int32_t>(bytes[6]) << 8) | static_cast<int32_t>(bytes[7]);
     EXPECT_EQ(correlation_id, 42);
 }
+
+TEST(SerializerTest, SerializesSyncGroupResponse) {
+    SyncGroupResponse resp{
+        .correlation_id = 42,
+        .throttle_time_ms = 0,
+        .error_code = 0,
+        .protocol_type = {},
+        .protocol_name = {},
+        .assignment = {0x01, 0x02},
+    };
+    auto bytes = serialize(resp);
+    EXPECT_GT(bytes.size(), 20u);
+    int32_t correlation_id2 =
+        (static_cast<int32_t>(bytes[4]) << 24) | (static_cast<int32_t>(bytes[5]) << 16) |
+        (static_cast<int32_t>(bytes[6]) << 8) | static_cast<int32_t>(bytes[7]);
+    EXPECT_EQ(correlation_id2, 42);
+}

@@ -743,6 +743,79 @@ auto parse_request(std::span<const std::uint8_t> buf) -> std::expected<Request, 
                                 std::move(*protocol_type),
                                 std::move(protocols)};
     }
+    case 14: {
+        auto client_id_len = reader.read_int16();
+        if (!client_id_len) {
+            return std::unexpected(client_id_len.error());
+        }
+        if (*client_id_len > 0) {
+            auto skip_client = reader.skip(static_cast<size_t>(*client_id_len));
+            if (!skip_client) {
+                return std::unexpected(skip_client.error());
+            }
+        }
+        auto header_tag = reader.skip(1);
+        if (!header_tag) {
+            return std::unexpected(header_tag.error());
+        }
+
+        auto group_id = reader.read_compact_string();
+        if (!group_id) {
+            return std::unexpected(group_id.error());
+        }
+        auto generation_id = reader.read_int32();
+        if (!generation_id) {
+            return std::unexpected(generation_id.error());
+        }
+        auto member_id = reader.read_compact_string();
+        if (!member_id) {
+            return std::unexpected(member_id.error());
+        }
+
+        auto assign_array_len = reader.read_varint();
+        if (!assign_array_len) {
+            return std::unexpected(assign_array_len.error());
+        }
+        uint32_t assign_count = *assign_array_len > 0 ? *assign_array_len - 1 : 0;
+
+        std::vector<SyncGroupAssignment> assignments;
+        assignments.reserve(assign_count);
+        for (uint32_t ai = 0; ai < assign_count; ++ai) {
+            auto mid = reader.read_compact_string();
+            if (!mid) {
+                return std::unexpected(mid.error());
+            }
+            auto assign_bytes_len = reader.read_varint();
+            if (!assign_bytes_len) {
+                return std::unexpected(assign_bytes_len.error());
+            }
+            std::vector<uint8_t> assign_bytes;
+            if (*assign_bytes_len > 1) {
+                auto ab = reader.read_bytes(static_cast<size_t>(*assign_bytes_len - 1));
+                if (!ab) {
+                    return std::unexpected(ab.error());
+                }
+                assign_bytes.assign(ab->begin(), ab->end());
+            }
+            auto skip_assign_tag = reader.skip(1);
+            if (!skip_assign_tag) {
+                return std::unexpected(skip_assign_tag.error());
+            }
+            assignments.push_back(
+                {.member_id = std::move(*mid), .assignment = std::move(assign_bytes)});
+        }
+
+        auto body_tag = reader.skip(1);
+        if (!body_tag) {
+            return std::unexpected(body_tag.error());
+        }
+
+        return SyncGroupRequest{RequestHeader{*api_key, *api_version, *correlation_id},
+                                std::move(*group_id),
+                                *generation_id,
+                                std::move(*member_id),
+                                std::move(assignments)};
+    }
     default:
         return std::unexpected(make_error_code(std::errc::function_not_supported));
     }

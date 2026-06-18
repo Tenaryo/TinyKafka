@@ -203,6 +203,38 @@ auto Broker::handle(const Request& req) -> Response {
                     .members = members,
                 };
             },
+            [this](const SyncGroupRequest& r) -> Response {
+                std::lock_guard lock(contexts_mutex_);
+
+                int16_t error_code = 0;
+                std::vector<uint8_t> assignment;
+
+                auto gen_it = group_generations_.find(r.group_id);
+                if (gen_it == group_generations_.end() || gen_it->second != r.generation_id) {
+                    error_code = 82;
+                } else if (!r.assignments.empty()) {
+                    for (const auto& a : r.assignments) {
+                        member_assignments_[r.group_id][a.member_id] = a.assignment;
+                    }
+                } else {
+                    auto assign_it = member_assignments_.find(r.group_id);
+                    if (assign_it != member_assignments_.end()) {
+                        auto mem_it = assign_it->second.find(r.member_id);
+                        if (mem_it != assign_it->second.end()) {
+                            assignment = mem_it->second;
+                        }
+                    }
+                }
+
+                return SyncGroupResponse{
+                    .correlation_id = r.header.correlation_id,
+                    .throttle_time_ms = 0,
+                    .error_code = error_code,
+                    .protocol_type = {},
+                    .protocol_name = {},
+                    .assignment = std::move(assignment),
+                };
+            },
             [this](const MetadataRequest& r) -> Response {
                 std::vector<MetadataTopicResponse> topics;
                 if (r.topics.empty()) {

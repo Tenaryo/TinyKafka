@@ -985,3 +985,47 @@ TEST(ParserTest, ParsesJoinGroupRequest) {
     ASSERT_EQ(req->protocols.size(), 1u);
     EXPECT_EQ(req->protocols[0].name, "range");
 }
+
+TEST(ParserTest, ParsesSyncGroupRequest) {
+    std::vector<std::uint8_t> buf;
+    auto pb16 = [&](int16_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto pb32 = [&](int32_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+
+    pb16(14);
+    pb16(0);
+    pb32(42);
+    pb16(-1);
+    buf.push_back(0x00);
+    buf.push_back(0x02);
+    buf.push_back('g');
+    pb32(1);
+    buf.push_back(0x02);
+    buf.push_back('m');
+    buf.push_back(0x02);
+    buf.push_back(0x03);
+    buf.push_back('m');
+    buf.push_back('2');
+    buf.push_back(0x02);
+    buf.push_back(0x42);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+
+    auto result = parse_request(buf);
+    ASSERT_TRUE(result.has_value());
+    auto req = std::get_if<SyncGroupRequest>(&*result);
+    ASSERT_NE(req, nullptr);
+    EXPECT_EQ(req->header.api_key, 14);
+    EXPECT_EQ(req->group_id, "g");
+    EXPECT_EQ(req->generation_id, 1);
+    EXPECT_EQ(req->member_id, "m");
+    ASSERT_EQ(req->assignments.size(), 1u);
+    EXPECT_EQ(req->assignments[0].member_id, "m2");
+}

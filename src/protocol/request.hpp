@@ -123,6 +123,19 @@ struct JoinGroupRequest {
     std::vector<JoinGroupProtocol> protocols;
 };
 
+struct SyncGroupAssignment {
+    std::string member_id;
+    std::vector<uint8_t> assignment;
+};
+
+struct SyncGroupRequest {
+    RequestHeader header;
+    std::string group_id;
+    int32_t generation_id = -1;
+    std::string member_id;
+    std::vector<SyncGroupAssignment> assignments;
+};
+
 using Request = std::variant<ApiVersionsRequest,
                              DescribeTopicPartitionsRequest,
                              FetchRequest,
@@ -132,4 +145,5 @@ using Request = std::variant<ApiVersionsRequest,
                              MetadataRequest,
                              OffsetCommitRequest,
                              OffsetFetchRequest,
-                             ProduceRequest>;
+                             ProduceRequest,
+                             SyncGroupRequest>;

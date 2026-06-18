@@ -187,6 +187,15 @@ struct JoinGroupResponse {
     std::vector<JoinGroupMember> members;
 };
 
+struct SyncGroupResponse {
+    int32_t correlation_id;
+    int32_t throttle_time_ms;
+    int16_t error_code;
+    std::string protocol_type;
+    std::string protocol_name;
+    std::vector<uint8_t> assignment;
+};
+
 using Response = std::variant<ApiVersionsResponse,
                               DescribeTopicPartitionsResponse,
                               FetchResponse,
@@ -196,4 +205,5 @@ using Response = std::variant<ApiVersionsResponse,
                               MetadataResponse,
                               OffsetCommitResponse,
                               OffsetFetchResponse,
-                              ProduceResponse>;
+                              ProduceResponse,
+                              SyncGroupResponse>;
