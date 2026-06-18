@@ -789,3 +789,19 @@ TEST(SerializerTest, SerializesOffsetCommitResponse) {
                       (static_cast<int32_t>(bytes[6]) << 8) | static_cast<int32_t>(bytes[7]);
     EXPECT_EQ(corr_id, 42);
 }
+
+TEST(SerializerTest, SerializesOffsetFetchResponse) {
+    OffsetFetchResponse resp{
+        .correlation_id = 42,
+        .throttle_time_ms = 0,
+        .topics = {
+            {.topic_name = "t",
+             .partitions = {{.partition_index = 0, .committed_offset = 100, .error_code = 0}}}}};
+
+    auto bytes = serialize(resp);
+    EXPECT_GT(bytes.size(), 20u);
+    int32_t corr_id = (static_cast<int32_t>(bytes[4]) << 24) |
+                      (static_cast<int32_t>(bytes[5]) << 16) |
+                      (static_cast<int32_t>(bytes[6]) << 8) | static_cast<int32_t>(bytes[7]);
+    EXPECT_EQ(corr_id, 42);
+}

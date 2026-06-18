@@ -98,6 +98,17 @@ struct OffsetCommitRequest {
     std::vector<OffsetCommitTopicRequest> topics;
 };
 
+struct OffsetFetchTopicRequest {
+    std::string topic_name;
+    std::vector<int32_t> partition_indexes;
+};
+
+struct OffsetFetchRequest {
+    RequestHeader header;
+    std::string group_id;
+    std::vector<OffsetFetchTopicRequest> topics;
+};
+
 using Request = std::variant<ApiVersionsRequest,
                              DescribeTopicPartitionsRequest,
                              FetchRequest,
@@ -105,4 +116,5 @@ using Request = std::variant<ApiVersionsRequest,
                              ListOffsetsRequest,
                              MetadataRequest,
                              OffsetCommitRequest,
+                             OffsetFetchRequest,
                              ProduceRequest>;

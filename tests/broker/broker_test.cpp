@@ -1183,3 +1183,30 @@ TEST(BrokerTest, HandlesOffsetCommitRequest) {
     EXPECT_EQ(r->topics[0].partitions[1].error_code, 0);
 }
 
+TEST(BrokerTest, HandlesOffsetFetchEndToEnd) {
+    Broker broker(ClusterMetadata{}, "");
+
+    {
+        RequestHeader header{8, 0, 42};
+        OffsetCommitRequest req{
+            header,
+            "g",
+            {},
+            -1,
+            {{.topic_name = "t", .partitions = {{.partition_index = 0, .committed_offset = 100}}}}};
+        broker.handle(req);
+    }
+
+    {
+        RequestHeader header{9, 0, 42};
+        OffsetFetchRequest req{header, "g", {{.topic_name = "t", .partition_indexes = {0}}}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<OffsetFetchResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->correlation_id, 42);
+        ASSERT_EQ(r->topics.size(), 1u);
+        EXPECT_EQ(r->topics[0].topic_name, "t");
+        ASSERT_EQ(r->topics[0].partitions.size(), 1u);
+        EXPECT_EQ(r->topics[0].partitions[0].committed_offset, 100);
+    }
+}

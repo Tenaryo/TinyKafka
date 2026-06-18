@@ -887,3 +887,46 @@ TEST(ParserTest, ParsesOffsetCommitRequest) {
     EXPECT_EQ(req->topics[0].partitions[0].partition_index, 0);
     EXPECT_EQ(req->topics[0].partitions[0].committed_offset, 100);
 }
+
+TEST(ParserTest, ParsesOffsetFetchRequest) {
+    std::vector<uint8_t> buf;
+    auto pb16 = [&](int16_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto pb32 = [&](int32_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+
+    pb16(9);
+    pb16(0);
+    pb32(42);
+    pb16(-1);
+    buf.push_back(0x00);
+    buf.push_back(0x03);
+    buf.push_back('g');
+    buf.push_back('1');
+    buf.push_back(0x02);
+    buf.push_back(0x02);
+    buf.push_back('t');
+    buf.push_back(0x03);
+    pb32(0);
+    pb32(1);
+    buf.push_back(0x00);
+    buf.push_back(0x00);
+
+    auto result = parse_request(buf);
+    ASSERT_TRUE(result.has_value());
+    auto req = std::get_if<OffsetFetchRequest>(&*result);
+    ASSERT_NE(req, nullptr);
+    EXPECT_EQ(req->header.api_key, 9);
+    EXPECT_EQ(req->group_id, "g1");
+    ASSERT_EQ(req->topics.size(), 1u);
+    EXPECT_EQ(req->topics[0].topic_name, "t");
+    ASSERT_EQ(req->topics[0].partition_indexes.size(), 2u);
+    EXPECT_EQ(req->topics[0].partition_indexes[0], 0);
+    EXPECT_EQ(req->topics[0].partition_indexes[1], 1);
+}

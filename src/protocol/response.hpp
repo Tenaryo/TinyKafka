@@ -154,6 +154,23 @@ struct OffsetCommitResponse {
     std::vector<OffsetCommitTopicResponse> topics;
 };
 
+struct OffsetFetchPartitionResponse {
+    int32_t partition_index = 0;
+    int64_t committed_offset = -1;
+    int16_t error_code = 0;
+};
+
+struct OffsetFetchTopicResponse {
+    std::string topic_name;
+    std::vector<OffsetFetchPartitionResponse> partitions;
+};
+
+struct OffsetFetchResponse {
+    int32_t correlation_id;
+    int32_t throttle_time_ms;
+    std::vector<OffsetFetchTopicResponse> topics;
+};
+
 using Response = std::variant<ApiVersionsResponse,
                               DescribeTopicPartitionsResponse,
                               FetchResponse,
@@ -161,4 +178,5 @@ using Response = std::variant<ApiVersionsResponse,
                               ListOffsetsResponse,
                               MetadataResponse,
                               OffsetCommitResponse,
+                              OffsetFetchResponse,
                               ProduceResponse>;
