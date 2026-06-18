@@ -297,6 +297,42 @@ auto serialize(const Response& resp) -> std::vector<std::uint8_t> {
 
                 return buf;
             },
+            [](const OffsetCommitResponse& r) -> std::vector<std::uint8_t> {
+                size_t body_size = 4 + 1 + 4;
+                body_size += varint_encoded_size(static_cast<uint32_t>(r.topics.size()) + 1);
+                for (const auto& t : r.topics) {
+                    uint32_t name_varint = static_cast<uint32_t>(t.topic_name.size()) + 1;
+                    body_size += varint_encoded_size(name_varint) + t.topic_name.size();
+                    body_size +=
+                        varint_encoded_size(static_cast<uint32_t>(t.partitions.size()) + 1);
+                    body_size += t.partitions.size() * (4 + 2 + 1);
+                    body_size += 1;
+                }
+                body_size += 1;
+
+                std::vector<uint8_t> buf(4 + body_size);
+                ByteWriter writer(buf);
+
+                writer.write_int32(static_cast<int32_t>(body_size));
+                writer.write_int32(r.correlation_id);
+                writer.write_int8(0x00);
+                writer.write_int32(r.throttle_time_ms);
+
+                writer.write_varint(static_cast<uint32_t>(r.topics.size()) + 1);
+                for (const auto& t : r.topics) {
+                    writer.write_compact_string(t.topic_name);
+                    writer.write_varint(static_cast<uint32_t>(t.partitions.size()) + 1);
+                    for (const auto& p : t.partitions) {
+                        writer.write_int32(p.partition_index);
+                        writer.write_int16(p.error_code);
+                        writer.write_int8(0x00);
+                    }
+                    writer.write_int8(0x00);
+                }
+
+                writer.write_int8(0x00);
+                return buf;
+            },
             [](const ListOffsetsResponse& r) -> std::vector<std::uint8_t> {
                 size_t body_size = 4 + 1 + 4;
 

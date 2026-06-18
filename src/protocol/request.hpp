@@ -80,10 +80,29 @@ struct FindCoordinatorRequest {
     int8_t key_type = 0;
 };
 
+struct OffsetCommitPartitionRequest {
+    int32_t partition_index = 0;
+    int64_t committed_offset = 0;
+};
+
+struct OffsetCommitTopicRequest {
+    std::string topic_name;
+    std::vector<OffsetCommitPartitionRequest> partitions;
+};
+
+struct OffsetCommitRequest {
+    RequestHeader header;
+    std::string group_id;
+    std::string member_id;
+    int32_t generation_id = -1;
+    std::vector<OffsetCommitTopicRequest> topics;
+};
+
 using Request = std::variant<ApiVersionsRequest,
                              DescribeTopicPartitionsRequest,
                              FetchRequest,
                              FindCoordinatorRequest,
                              ListOffsetsRequest,
                              MetadataRequest,
+                             OffsetCommitRequest,
                              ProduceRequest>;

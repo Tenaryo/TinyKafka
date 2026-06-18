@@ -1162,3 +1162,24 @@ TEST(BrokerTest, HandlesFindCoordinatorRequest) {
     EXPECT_EQ(r->host, "localhost");
     EXPECT_EQ(r->port, 9092);
 }
+
+TEST(BrokerTest, HandlesOffsetCommitRequest) {
+    RequestHeader header{8, 0, 42};
+    OffsetCommitRequest req{header,
+                            "my-group",
+                            {},
+                            -1,
+                            {{.topic_name = "test",
+                              .partitions = {{.partition_index = 0, .committed_offset = 100},
+                                             {.partition_index = 1, .committed_offset = 200}}}}};
+    auto resp = Broker(ClusterMetadata{}, "").handle(req);
+    auto r = std::get_if<OffsetCommitResponse>(&resp);
+    ASSERT_NE(r, nullptr);
+    EXPECT_EQ(r->correlation_id, 42);
+    ASSERT_EQ(r->topics.size(), 1u);
+    EXPECT_EQ(r->topics[0].topic_name, "test");
+    ASSERT_EQ(r->topics[0].partitions.size(), 2u);
+    EXPECT_EQ(r->topics[0].partitions[0].error_code, 0);
+    EXPECT_EQ(r->topics[0].partitions[1].error_code, 0);
+}
+

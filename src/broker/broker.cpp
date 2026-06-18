@@ -97,6 +97,30 @@ auto Broker::handle(const Request& req) -> Response {
                     .port = 9092,
                 };
             },
+            [this](const OffsetCommitRequest& r) -> Response {
+                std::vector<OffsetCommitTopicResponse> topic_responses;
+                topic_responses.reserve(r.topics.size());
+
+                std::lock_guard lock(contexts_mutex_);
+                for (const auto& topic_req : r.topics) {
+                    std::vector<OffsetCommitPartitionResponse> parts;
+                    parts.reserve(topic_req.partitions.size());
+                    for (const auto& part_req : topic_req.partitions) {
+                        group_offsets_[r.group_id][topic_req.topic_name][part_req.partition_index] =
+                            part_req.committed_offset;
+                        parts.push_back(
+                            {.partition_index = part_req.partition_index, .error_code = 0});
+                    }
+                    topic_responses.push_back(
+                        {.topic_name = topic_req.topic_name, .partitions = std::move(parts)});
+                }
+
+                return OffsetCommitResponse{
+                    .correlation_id = r.header.correlation_id,
+                    .throttle_time_ms = 0,
+                    .topics = std::move(topic_responses),
+                };
+            },
             [this](const MetadataRequest& r) -> Response {
                 std::vector<MetadataTopicResponse> topics;
                 if (r.topics.empty()) {

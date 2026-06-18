@@ -30,4 +30,7 @@ class Broker {
     std::string log_root_;
     std::mutex contexts_mutex_;
     std::unordered_map<std::string, std::unique_ptr<broker::PartitionContext>> partition_contexts_;
+    std::unordered_map<std::string,
+                       std::unordered_map<std::string, std::unordered_map<int32_t, int64_t>>>
+        group_offsets_;
 };

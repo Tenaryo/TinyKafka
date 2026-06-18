@@ -138,10 +138,27 @@ struct FindCoordinatorResponse {
     int32_t port;
 };
 
+struct OffsetCommitPartitionResponse {
+    int32_t partition_index = 0;
+    int16_t error_code = 0;
+};
+
+struct OffsetCommitTopicResponse {
+    std::string topic_name;
+    std::vector<OffsetCommitPartitionResponse> partitions;
+};
+
+struct OffsetCommitResponse {
+    int32_t correlation_id;
+    int32_t throttle_time_ms;
+    std::vector<OffsetCommitTopicResponse> topics;
+};
+
 using Response = std::variant<ApiVersionsResponse,
                               DescribeTopicPartitionsResponse,
                               FetchResponse,
                               FindCoordinatorResponse,
                               ListOffsetsResponse,
                               MetadataResponse,
+                              OffsetCommitResponse,
                               ProduceResponse>;

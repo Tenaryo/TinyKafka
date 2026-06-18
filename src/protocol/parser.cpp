@@ -477,6 +477,92 @@ auto parse_request(std::span<const std::uint8_t> buf) -> std::expected<Request, 
         return ProduceRequest{RequestHeader{*api_key, *api_version, *correlation_id},
                               std::move(topics)};
     }
+    case 8: {
+        auto client_id_len = reader.read_int16();
+        if (!client_id_len) {
+            return std::unexpected(client_id_len.error());
+        }
+        if (*client_id_len > 0) {
+            auto skip_client = reader.skip(static_cast<size_t>(*client_id_len));
+            if (!skip_client) {
+                return std::unexpected(skip_client.error());
+            }
+        }
+        auto header_tag = reader.skip(1);
+        if (!header_tag) {
+            return std::unexpected(header_tag.error());
+        }
+
+        auto group_id = reader.read_compact_string();
+        if (!group_id) {
+            return std::unexpected(group_id.error());
+        }
+        auto member_id = reader.read_compact_string();
+        if (!member_id) {
+            return std::unexpected(member_id.error());
+        }
+        auto generation_id = reader.read_int32();
+        if (!generation_id) {
+            return std::unexpected(generation_id.error());
+        }
+
+        auto topic_array_len = reader.read_varint();
+        if (!topic_array_len) {
+            return std::unexpected(topic_array_len.error());
+        }
+        uint32_t topic_count = *topic_array_len > 0 ? *topic_array_len - 1 : 0;
+
+        std::vector<OffsetCommitTopicRequest> topics;
+        topics.reserve(topic_count);
+        for (uint32_t ti = 0; ti < topic_count; ++ti) {
+            auto name = reader.read_compact_string();
+            if (!name) {
+                return std::unexpected(name.error());
+            }
+
+            auto part_array_len = reader.read_varint();
+            if (!part_array_len) {
+                return std::unexpected(part_array_len.error());
+            }
+            uint32_t part_count = *part_array_len > 0 ? *part_array_len - 1 : 0;
+
+            std::vector<OffsetCommitPartitionRequest> parts;
+            parts.reserve(part_count);
+            for (uint32_t pi = 0; pi < part_count; ++pi) {
+                auto part_idx = reader.read_int32();
+                if (!part_idx) {
+                    return std::unexpected(part_idx.error());
+                }
+                auto committed_offset = reader.read_int64();
+                if (!committed_offset) {
+                    return std::unexpected(committed_offset.error());
+                }
+                auto skip_part_tag = reader.skip(1);
+                if (!skip_part_tag) {
+                    return std::unexpected(skip_part_tag.error());
+                }
+                parts.push_back(
+                    {.partition_index = *part_idx, .committed_offset = *committed_offset});
+            }
+
+            auto skip_topic_tag = reader.skip(1);
+            if (!skip_topic_tag) {
+                return std::unexpected(skip_topic_tag.error());
+            }
+            topics.push_back({.topic_name = std::move(*name), .partitions = std::move(parts)});
+        }
+
+        auto body_tag = reader.skip(1);
+        if (!body_tag) {
+            return std::unexpected(body_tag.error());
+        }
+
+        return OffsetCommitRequest{RequestHeader{*api_key, *api_version, *correlation_id},
+                                   std::move(*group_id),
+                                   std::move(*member_id),
+                                   *generation_id,
+                                   std::move(topics)};
+    }
     case 10: {
         auto client_id_len = reader.read_int16();
         if (!client_id_len) {

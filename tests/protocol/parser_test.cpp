@@ -826,3 +826,64 @@ TEST(ParserTest, ParsesFindCoordinatorRequest) {
     EXPECT_EQ(req->coordinator_key, "my-grp");
     EXPECT_EQ(req->key_type, 0);
 }
+
+TEST(ParserTest, ParsesOffsetCommitRequest) {
+    std::vector<std::uint8_t> buf;
+    auto pb16 = [&](int16_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto pb32 = [&](int32_t v) {
+        buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+        buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+        buf.push_back(static_cast<uint8_t>(v & 0xFF));
+    };
+    auto pb64 = [&](int64_t v) {
+        for (int i = 7; i >= 0; --i)
+            buf.push_back(static_cast<uint8_t>((v >> (i * 8)) & 0xFF));
+    };
+
+    pb16(8);
+    pb16(0);
+    pb32(42);
+    pb16(-1);
+    buf.push_back(0x00);
+    buf.push_back(0x0B); // group_id varint = 11 (10+1)
+    buf.push_back('m');
+    buf.push_back('y');
+    buf.push_back('-');
+    buf.push_back('g');
+    buf.push_back('r');
+    buf.push_back('o');
+    buf.push_back('u');
+    buf.push_back('p');
+    buf.push_back('1');
+    buf.push_back('0');
+    buf.push_back(0x01); // member_id = empty (varint 1)
+    pb32(1);             // generation_id
+    buf.push_back(0x02); // topics array: 1 element
+    buf.push_back(0x05); // topic name varint
+    buf.push_back('t');
+    buf.push_back('e');
+    buf.push_back('s');
+    buf.push_back('t');
+    buf.push_back(0x02); // partitions: 1 element
+    pb32(0);             // partition_index
+    pb64(100);           // committed_offset
+    buf.push_back(0x00); // partition TAG_BUFFER
+    buf.push_back(0x00); // topic TAG_BUFFER
+    buf.push_back(0x00); // body TAG_BUFFER
+
+    auto result = parse_request(buf);
+    ASSERT_TRUE(result.has_value());
+    auto req = std::get_if<OffsetCommitRequest>(&*result);
+    ASSERT_NE(req, nullptr);
+    EXPECT_EQ(req->header.api_key, 8);
+    EXPECT_EQ(req->group_id, "my-group10");
+    ASSERT_EQ(req->topics.size(), 1u);
+    EXPECT_EQ(req->topics[0].topic_name, "test");
+    ASSERT_EQ(req->topics[0].partitions.size(), 1u);
+    EXPECT_EQ(req->topics[0].partitions[0].partition_index, 0);
+    EXPECT_EQ(req->topics[0].partitions[0].committed_offset, 100);
+}
