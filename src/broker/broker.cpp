@@ -216,6 +216,10 @@ auto Broker::handle(const Request& req) -> Response {
                     for (const auto& a : r.assignments) {
                         member_assignments_[r.group_id][a.member_id] = a.assignment;
                     }
+                    auto self_it = member_assignments_[r.group_id].find(r.member_id);
+                    if (self_it != member_assignments_[r.group_id].end()) {
+                        assignment = self_it->second;
+                    }
                 } else {
                     auto assign_it = member_assignments_.find(r.group_id);
                     if (assign_it != member_assignments_.end()) {
