@@ -293,6 +293,7 @@ TinyKafka 已具备的基础能力：
 | 2026-06-17 | v1.0 | FIX-3（增量 Fetch + Consumer Benchmark）已完成 — consumer_bench 单次 Fetch，produce/fetch 数据格式待统一 | Reviewer |
 | 2026-06-17 | v1.0 | M5 F39（Fetch 增强）已完成 — produce/fetch 统一 v2 blob 格式 + parse_record_batch 多 batch 串联解析 + record 级 skip 验证通过 | Reviewer |
 | 2026-06-17 | v1.0 | FIX-4（Release 优化构建）已完成 — benchmark/CMakeLists.txt +O3，Producer -O3 提升 9-14% | Reviewer |
-| 2026-06-17 | v1.0 | FIX-5（Consumer OOM + 每轮独立 broker session）开始开发 | Reviewer |
+| 2026-06-17 | v1.0 | FIX-5（Consumer OOM）已完成 — 每轮独立 broker session + -O3 全量 Produce+Consume 数据 | Reviewer |
+| 2026-06-17 | v1.0 | M5 F43（Apache Kafka 同 workload 对比）开始开发 — v1 最终任务 | Reviewer |
 | 2026-06-17 | v1.0 | v1/v2 战略调整：v1 全功能体系 + Apache Kafka 对比；v2 纯性能工程（批量写入、io_uring、火焰图优化、fuzzing）| Reviewer |
 | 2026-06-17 | v1.0 | M4 任务重排序：F32→F33→F28→F34；F31 推迟至 v2；F33 缩为 offset 整合；更新当前状态 | Reviewer |

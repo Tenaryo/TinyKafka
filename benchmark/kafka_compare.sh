@@ -30,7 +30,12 @@ declare -A TINY_P50
 declare -A KAFKA_TP
 declare -A KAFKA_P50
 
-echo "[compare] Building producer_bench..."
+echo "[compare] Building TinyKafka server (Release)..."
+cd "$PROJECT_DIR"
+./build.sh Release
+cd "$SCRIPT_DIR"
+
+echo "[compare] Building producer_bench (Release)..."
 cmake -B "$SCRIPT_DIR/build" -S "$SCRIPT_DIR" -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build "$SCRIPT_DIR/build" --target producer_bench --target consumer_bench
 
