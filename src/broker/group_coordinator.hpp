@@ -16,6 +16,18 @@ enum class GroupState : uint8_t {
     Dead,
 };
 
+struct MemberInfo {
+    std::string member_id;
+    std::vector<uint8_t> protocol_metadata;
+    std::vector<uint8_t> assignment;
+};
+
+struct GroupMetadata {
+    GroupState state = GroupState::Empty;
+    int32_t generation = 0;
+    std::vector<MemberInfo> members;
+};
+
 class GroupCoordinator {
   public:
     GroupCoordinator() = default;
@@ -31,10 +43,6 @@ class GroupCoordinator {
     std::unordered_map<std::string,
                        std::unordered_map<std::string, std::unordered_map<int32_t, int64_t>>>
         group_offsets_;
-    std::unordered_map<std::string, std::vector<JoinGroupMember>> group_members_;
-    std::unordered_map<std::string, int32_t> group_generations_;
-    std::unordered_map<std::string, GroupState> group_states_;
-    std::unordered_map<std::string, std::unordered_map<std::string, std::vector<uint8_t>>>
-        member_assignments_;
+    std::unordered_map<std::string, GroupMetadata> groups_;
     int32_t next_member_id_{0};
 };

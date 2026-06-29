@@ -21,9 +21,9 @@ auto GroupCoordinator::handle_join_group(const JoinGroupRequest& r) -> JoinGroup
         member = "member-" + std::to_string(++next_member_id_);
     }
 
-    auto& members = group_members_[r.group_id];
+    auto& meta = groups_[r.group_id];
     bool found = false;
-    for (const auto& m : members) {
+    for (const auto& m : meta.members) {
         if (m.member_id == member) {
             found = true;
             break;
@@ -34,33 +34,39 @@ auto GroupCoordinator::handle_join_group(const JoinGroupRequest& r) -> JoinGroup
         if (!r.protocols.empty()) {
             metadata = r.protocols[0].metadata;
         }
-        members.push_back({.member_id = member, .metadata = std::move(metadata)});
+        meta.members.push_back(
+            {.member_id = member, .protocol_metadata = std::move(metadata), .assignment = {}});
     }
 
-    auto& gen = group_generations_[r.group_id];
-    if (gen == 0) {
-        gen = 1;
+    if (meta.generation == 0) {
+        meta.generation = 1;
     } else {
-        ++gen;
+        ++meta.generation;
     }
 
-    group_states_[r.group_id] = GroupState::AwaitingSync;
+    meta.state = GroupState::AwaitingSync;
 
-    std::string leader = members[0].member_id;
+    std::string leader = meta.members[0].member_id;
     std::string proto_name;
     if (!r.protocols.empty()) {
         proto_name = r.protocols[0].name;
+    }
+
+    std::vector<JoinGroupMember> response_members;
+    response_members.reserve(meta.members.size());
+    for (const auto& m : meta.members) {
+        response_members.push_back({.member_id = m.member_id, .metadata = m.protocol_metadata});
     }
 
     return JoinGroupResponse{
         .correlation_id = r.header.correlation_id,
         .throttle_time_ms = 0,
         .error_code = 0,
-        .generation_id = gen,
+        .generation_id = meta.generation,
         .protocol_name = proto_name,
         .leader = leader,
         .member_id = member,
-        .members = members,
+        .members = response_members,
     };
 }
 
@@ -70,24 +76,39 @@ auto GroupCoordinator::handle_sync_group(const SyncGroupRequest& r) -> SyncGroup
     int16_t error_code = 0;
     std::vector<uint8_t> assignment;
 
-    auto gen_it = group_generations_.find(r.group_id);
-    if (gen_it == group_generations_.end() || gen_it->second != r.generation_id) {
+    auto it = groups_.find(r.group_id);
+    if (it == groups_.end() || it->second.generation != r.generation_id) {
         error_code = 82;
     } else if (!r.assignments.empty()) {
+        auto& meta = it->second;
         for (const auto& a : r.assignments) {
-            member_assignments_[r.group_id][a.member_id] = a.assignment;
+            bool updated = false;
+            for (auto& m : meta.members) {
+                if (m.member_id == a.member_id) {
+                    m.assignment = a.assignment;
+                    updated = true;
+                    break;
+                }
+            }
+            if (!updated) {
+                meta.members.push_back({.member_id = a.member_id,
+                                        .protocol_metadata = {},
+                                        .assignment = a.assignment});
+            }
         }
-        group_states_[r.group_id] = GroupState::Stable;
-        auto self_it = member_assignments_[r.group_id].find(r.member_id);
-        if (self_it != member_assignments_[r.group_id].end()) {
-            assignment = self_it->second;
+        meta.state = GroupState::Stable;
+        for (const auto& m : meta.members) {
+            if (m.member_id == r.member_id) {
+                assignment = m.assignment;
+                break;
+            }
         }
     } else {
-        auto assign_it = member_assignments_.find(r.group_id);
-        if (assign_it != member_assignments_.end()) {
-            auto mem_it = assign_it->second.find(r.member_id);
-            if (mem_it != assign_it->second.end()) {
-                assignment = mem_it->second;
+        auto& meta = it->second;
+        for (const auto& m : meta.members) {
+            if (m.member_id == r.member_id) {
+                assignment = m.assignment;
+                break;
             }
         }
     }
@@ -106,14 +127,12 @@ auto GroupCoordinator::handle_heartbeat(const HeartbeatRequest& r) -> HeartbeatR
     std::lock_guard lock(mutex_);
 
     int16_t error_code = 0;
-    auto gen_it = group_generations_.find(r.group_id);
-    if (gen_it == group_generations_.end() || gen_it->second != r.generation_id) {
+    auto it = groups_.find(r.group_id);
+    if (it == groups_.end() || it->second.generation != r.generation_id) {
         error_code = 82;
     }
 
-    auto state_it = group_states_.find(r.group_id);
-    if (error_code == 0 &&
-        (state_it == group_states_.end() || state_it->second != GroupState::Stable)) {
+    if (error_code == 0 && (it == groups_.end() || it->second.state != GroupState::Stable)) {
         error_code = 82;
     }
 
