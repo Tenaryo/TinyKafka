@@ -57,6 +57,14 @@ void apply_config_key(Config& config, std::string_view key, std::string_view val
             logging::warn("invalid max.write.buffer.bytes value: " + std::string(value) +
                           ", using default " + std::to_string(config.max_write_buffer_bytes));
         }
+    } else if (key == "segment.bytes") {
+        auto parsed = parse_int<size_t>(value);
+        if (parsed != 0) {
+            config.segment_bytes = parsed;
+        } else {
+            logging::warn("invalid segment.bytes value: " + std::string(value) +
+                          ", using default " + std::to_string(config.segment_bytes));
+        }
     }
 }
 

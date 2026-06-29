@@ -21,7 +21,8 @@ namespace net {
 
 EpollReactor::EpollReactor(const config::Config& config, ClusterMetadata metadata, int server_fd)
     : epoll_fd_(::epoll_create1(EPOLL_CLOEXEC)), server_fd_(server_fd),
-      broker_(std::move(metadata), config.log_root), max_message_bytes_(config.max_message_bytes),
+      broker_(std::move(metadata), config.log_root, config.segment_bytes),
+      max_message_bytes_(config.max_message_bytes),
       max_write_buffer_bytes_(config.max_write_buffer_bytes),
       last_metrics_log_(std::chrono::steady_clock::now()) {
     if (epoll_fd_ < 0) [[unlikely]] {

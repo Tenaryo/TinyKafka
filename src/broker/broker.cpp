@@ -68,8 +68,10 @@ auto Broker::get_or_create_context(const std::string& topic_name,
                                    int32_t partition) -> broker::PartitionContext& {
     auto key = topic_name + ":" + std::to_string(partition);
     std::lock_guard lock(contexts_mutex_);
-    auto [it, inserted] = partition_contexts_.try_emplace(
-        key, std::make_unique<broker::PartitionContext>(log_root_, topic_name, partition));
+    auto [it, inserted] =
+        partition_contexts_.try_emplace(key,
+                                        std::make_unique<broker::PartitionContext>(
+                                            log_root_, topic_name, partition, segment_bytes_));
     return *it->second;
 }
 

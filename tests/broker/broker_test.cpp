@@ -1745,3 +1745,139 @@ TEST(BrokerTest, RebalanceKeepsGenerationStable) {
         EXPECT_EQ(r->error_code, 0);
     }
 }
+
+TEST(BrokerTest, SegmentRollCreatesNewFile) {
+    namespace fs = std::filesystem;
+    constexpr TopicId topic_uuid = {
+        0xa1,
+        0xb2,
+        0xc3,
+        0xd4,
+        0xe5,
+        0xf6,
+        0xa7,
+        0xb8,
+        0xc9,
+        0xd0,
+        0xe1,
+        0xf2,
+        0xa3,
+        0xb4,
+        0xc5,
+        0xd6,
+    };
+
+    auto tmp_dir = make_tmp_log_dir();
+    auto meta = make_meta_with_topic("orders", topic_uuid, {0});
+    Broker broker(std::move(meta), tmp_dir, 50);
+
+    std::vector<uint8_t> value1(20, 0x01);
+    std::vector<uint8_t> value2(20, 0x02);
+    std::vector<uint8_t> value3(20, 0x03);
+    std::vector<std::vector<uint8_t>> values = {value1, value2, value3};
+
+    for (int i = 0; i < 3; ++i) {
+        auto batch = make_record_batch_v2({values[static_cast<size_t>(i)]});
+        RequestHeader header{0, 11, 100 + i};
+        ProduceRequest req{
+            header,
+            {{.topic_name = "orders", .partitions = {{.partition_index = 0, .records = batch}}}}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<ProduceResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        ASSERT_EQ(r->responses.size(), 1u);
+        ASSERT_EQ(r->responses[0].partitions.size(), 1u);
+        EXPECT_EQ(r->responses[0].partitions[0].error_code, 0);
+        EXPECT_EQ(r->responses[0].partitions[0].base_offset, i);
+    }
+
+    int file_count = 0;
+    for (const auto& entry : fs::directory_iterator(tmp_dir + "/orders-0")) {
+        if (entry.path().filename().string().ends_with(".log"))
+            ++file_count;
+    }
+    EXPECT_EQ(file_count, 2);
+
+    EXPECT_TRUE(fs::exists(tmp_dir + "/orders-0/00000000000000000000.log"));
+
+    {
+        RequestHeader header{1, 16, 200};
+        FetchRequest req{
+            header, {{.topic_id = topic_uuid, .partitions = {{.partition_index = 0}}}}, 0};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<FetchResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        ASSERT_EQ(r->responses.size(), 1u);
+        ASSERT_EQ(r->responses[0].partitions.size(), 1u);
+        EXPECT_EQ(r->responses[0].partitions[0].error_code, 0);
+        EXPECT_EQ(r->responses[0].partitions[0].records.size(), 60u);
+    }
+
+    fs::remove_all(tmp_dir);
+}
+
+TEST(BrokerTest, SegmentReadsAllFilesInOrder) {
+    constexpr TopicId topic_uuid = {
+        0xa1,
+        0xb2,
+        0xc3,
+        0xd4,
+        0xe5,
+        0xf6,
+        0xa7,
+        0xb8,
+        0xc9,
+        0xd0,
+        0xe1,
+        0xf2,
+        0xa3,
+        0xb4,
+        0xc5,
+        0xd6,
+    };
+
+    auto tmp_dir = make_tmp_log_dir();
+    auto meta = make_meta_with_topic("orders", topic_uuid, {0});
+    Broker broker(std::move(meta), tmp_dir, 50);
+
+    std::vector<uint8_t> value1(20, 0x01);
+    std::vector<uint8_t> value2(20, 0x02);
+    std::vector<uint8_t> value3(20, 0x03);
+    std::vector<std::vector<uint8_t>> values = {value1, value2, value3};
+
+    for (int i = 0; i < 3; ++i) {
+        auto batch = make_record_batch_v2({values[static_cast<size_t>(i)]});
+        RequestHeader header{0, 11, 100 + i};
+        ProduceRequest req{
+            header,
+            {{.topic_name = "orders", .partitions = {{.partition_index = 0, .records = batch}}}}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<ProduceResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        ASSERT_EQ(r->responses.size(), 1u);
+        ASSERT_EQ(r->responses[0].partitions.size(), 1u);
+        EXPECT_EQ(r->responses[0].partitions[0].error_code, 0);
+    }
+
+    {
+        RequestHeader header{1, 16, 200};
+        FetchRequest req{
+            header, {{.topic_id = topic_uuid, .partitions = {{.partition_index = 0}}}}, 0};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<FetchResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        ASSERT_EQ(r->responses.size(), 1u);
+        ASSERT_EQ(r->responses[0].partitions.size(), 1u);
+        EXPECT_EQ(r->responses[0].partitions[0].error_code, 0);
+
+        const auto& records = r->responses[0].partitions[0].records;
+        ASSERT_EQ(records.size(), 60u);
+        for (size_t i = 0; i < 20; ++i) {
+            EXPECT_EQ(records[i], 0x01);
+            EXPECT_EQ(records[20 + i], 0x02);
+            EXPECT_EQ(records[40 + i], 0x03);
+        }
+    }
+
+    std::filesystem::remove_all(tmp_dir);
+}

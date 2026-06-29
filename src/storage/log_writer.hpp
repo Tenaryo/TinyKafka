@@ -10,6 +10,7 @@ namespace storage {
 auto write_topic_log(std::string_view root_path,
                      std::string_view topic_name,
                      int32_t partition,
+                     int64_t active_segment,
                      std::span<const uint8_t> records) -> std::error_code;
 
 } // namespace storage

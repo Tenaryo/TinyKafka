@@ -14,8 +14,11 @@
 
 class Broker {
   public:
-    explicit Broker(ClusterMetadata metadata = {}, std::string log_root = {})
-        : metadata_(std::move(metadata)), log_root_(std::move(log_root)) {}
+    explicit Broker(ClusterMetadata metadata = {},
+                    std::string log_root = {},
+                    size_t segment_bytes = 0)
+        : metadata_(std::move(metadata)), log_root_(std::move(log_root)),
+          segment_bytes_(segment_bytes) {}
 
     auto handle(const Request& req) -> Response;
   private:
@@ -30,6 +33,7 @@ class Broker {
 
     ClusterMetadata metadata_;
     std::string log_root_;
+    size_t segment_bytes_{0};
     std::mutex contexts_mutex_;
     std::unordered_map<std::string, std::unique_ptr<broker::PartitionContext>> partition_contexts_;
     GroupCoordinator coordinator_;

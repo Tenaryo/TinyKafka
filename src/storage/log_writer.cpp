@@ -10,6 +10,7 @@ namespace storage {
 auto write_topic_log(std::string_view root_path,
                      std::string_view topic_name,
                      int32_t partition,
+                     int64_t active_segment,
                      std::span<const uint8_t> records) -> std::error_code {
     auto dir = std::format("{}/{}-{}", root_path, topic_name, partition);
     std::error_code ec;
@@ -18,7 +19,7 @@ auto write_topic_log(std::string_view root_path,
         return ec;
     }
 
-    auto path = std::format("{}/00000000000000000000.log", dir);
+    auto path = std::format("{}/{:020d}.log", dir, active_segment);
     std::ofstream file(path, std::ios::binary | std::ios::app);
     if (!file) {
         return {errno, std::generic_category()};
