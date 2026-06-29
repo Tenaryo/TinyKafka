@@ -16,7 +16,7 @@ CSV_FILES=()
 mkdir -p "$RESULTS_DIR"
 
 echo "[bench] Building producer_bench..."
-cmake -B "$SCRIPT_DIR/build" -S "$SCRIPT_DIR" -G Ninja
+cmake -B "$SCRIPT_DIR/build" -S "$SCRIPT_DIR" -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build "$SCRIPT_DIR/build" --target producer_bench --target consumer_bench
 
 echo "[bench] Setting up metadata for topic '$TOPIC'..."
