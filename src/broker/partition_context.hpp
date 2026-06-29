@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "storage/log_reader.hpp"
+#include "storage/partition_log.hpp"
 #include "util/record_batch.hpp"
 
 namespace broker {
@@ -35,7 +36,7 @@ class PartitionContext {
                      int32_t partition,
                      size_t segment_bytes = 0)
         : log_root_(std::move(log_root)), topic_name_(std::move(topic_name)), partition_(partition),
-          segment_bytes_(segment_bytes) {}
+          log_(log_root_, topic_name_, partition_), segment_bytes_(segment_bytes) {}
 
     [[nodiscard]] auto produce(std::span<const uint8_t> record_batch_data) -> ProduceResult {
         std::lock_guard lock(mutex_);
@@ -51,7 +52,7 @@ class PartitionContext {
         auto append_time =
             std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
 
-        auto dir = std::format("{}/{}-{}", log_root_, topic_name_, partition_);
+        auto dir = log_.dir_path();
         std::error_code dir_ec;
         std::filesystem::create_directories(dir, dir_ec);
         if (dir_ec) {
@@ -71,7 +72,7 @@ class PartitionContext {
                 {.offset = next_offset_, .file_position = current_segment_bytes_});
         }
 
-        auto path = std::format("{}/{:020d}.log", dir, current_segment_base_offset_);
+        auto path = log_.segment_path(current_segment_base_offset_);
         std::ofstream file(path, std::ios::binary | std::ios::app);
         if (!file) {
             return {};
@@ -101,6 +102,8 @@ class PartitionContext {
             return {};
         }
 
+        constexpr size_t kMaxFetchChunk = 10 * 1024 * 1024;
+
         const SparseIndexEntry* best = nullptr;
         for (const auto& entry : current_segment_index_) {
             if (entry.offset <= offset) {
@@ -114,8 +117,7 @@ class PartitionContext {
         int64_t entry_offset = best ? best->offset : 0;
         int64_t segment_base = best ? current_segment_base_offset_ : 0;
 
-        auto path =
-            std::format("{}/{}-{}/{:020d}.log", log_root_, topic_name_, partition_, segment_base);
+        auto path = log_.segment_path(segment_base);
         std::ifstream file(path, std::ios::binary | std::ios::ate);
         if (!file.is_open()) {
             return {};
@@ -126,7 +128,13 @@ class PartitionContext {
             return {};
         }
 
-        size_t read_size = static_cast<size_t>(file_size) - start_position;
+        size_t read_limit = static_cast<size_t>(max_bytes) * 2;
+        if (read_limit > kMaxFetchChunk) {
+            read_limit = kMaxFetchChunk;
+        }
+
+        size_t available = static_cast<size_t>(file_size) - start_position;
+        size_t read_size = std::min(read_limit, available);
         if (read_size == 0) {
             return {};
         }
@@ -139,8 +147,7 @@ class PartitionContext {
         std::vector<uint8_t> raw_data(read_size);
         file.read(reinterpret_cast<char*>(raw_data.data()),
                   static_cast<std::streamsize>(read_size));
-        auto read_bytes = static_cast<size_t>(file.gcount());
-        raw_data.resize(read_bytes);
+        raw_data.resize(static_cast<size_t>(file.gcount()));
 
         auto records = util::parse_record_batch(raw_data);
         if (!records || records->empty()) {
@@ -181,6 +188,7 @@ class PartitionContext {
     std::string log_root_;
     std::string topic_name_;
     int32_t partition_;
+    storage::PartitionLog log_;
     int64_t next_offset_{0};
     int64_t current_segment_base_offset_{0};
     size_t current_segment_bytes_{0};
