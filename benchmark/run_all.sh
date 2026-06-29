@@ -57,6 +57,15 @@ for SIZE in "${SIZES[@]}"; do
         --csv="$CSV" | tee "$RESULTS_DIR/bench_${TS}.md"
 done
 
+echo "=== Running consumer benchmark (Fetch after Produce) ==="
+TS=$(date +%Y%m%d_%H%M%S)
+CONSUMER_CSV="$RESULTS_DIR/bench_${TS}.csv"
+BENCH_BIN_CONSUMER="$PROJECT_DIR/benchmark/build/consumer_bench"
+"$BENCH_BIN_CONSUMER" \
+    --messages="$MESSAGES" \
+    --topic="$TOPIC" \
+    --csv="$CONSUMER_CSV" | tee "$RESULTS_DIR/bench_${TS}.md"
+
 COMPARISON="$RESULTS_DIR/comparison.md"
 {
     echo "## Producer Throughput Comparison (single broker session)"
@@ -80,6 +89,20 @@ COMPARISON="$RESULTS_DIR/comparison.md"
         printf "| %-11s | %-17s | %-17s | %-7s | %-7s | %-8s |\n" \
             "$SIZE_LABEL" "$TP_MSG" "$TP_MB" "$P50" "$P99" "$P999"
     done
+
+    echo
+    echo "### Consumer (Fetch, single connection)"
+    echo
+    echo "| Type     | Throughput (msg/s) | P50 (μs) | P99 (μs) | P999 (μs) |"
+    echo "|----------|-------------------|---------|---------|----------|"
+    if [[ -f "$CONSUMER_CSV" ]]; then
+        CTAIL=$(tail -1 "$CONSUMER_CSV")
+        IFS=',' read -r CTYPE CMSG CTIME CTP CTAVG CP50 CP99 CP999 <<<"$CTAIL"
+        printf "| %-8s | %-17s | %-7s | %-7s | %-8s |\n" \
+            "Fetch" "$CTP" "$CP50" "$CP99" "$CP999"
+    fi
+
+    echo
 
     echo
     echo "_Generated $(date -u +'%Y-%m-%dT%H:%M:%SZ')_"
