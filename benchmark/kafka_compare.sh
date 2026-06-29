@@ -80,25 +80,32 @@ if [[ -n "$KAFKA_HOME" && -f "$KAFKA_HOME/bin/kafka-server-start.sh" ]]; then
     rm -rf "$KAFKA_DATA"
     mkdir -p "$KAFKA_DATA"
 
-    KAFKA_UUID=$(uuidgen 2>/dev/null || python3 -c "import uuid; print(uuid.uuid4())" | tr '[:upper:]' '[:lower:]')
+    KAFKA_UUID=$("$KAFKA_HOME/bin/kafka-storage.sh" random-uuid 2>/dev/null)
 
     cat >"$KAFKA_DATA/server.properties" <<EOF
 process.roles=broker,controller
 node.id=1
 controller.quorum.voters=1@localhost:9094
-listeners=PLAINTEXT://localhost:$KAFKA_PORT
-controller.listener.names=PLAINTEXT
+listeners=PLAINTEXT://localhost:$KAFKA_PORT,CONTROLLER://localhost:9094
+advertised.listeners=PLAINTEXT://localhost:$KAFKA_PORT
+controller.listener.names=CONTROLLER
+listener.security.protocol.map=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
 log.dirs=$KAFKA_DATA/logs
-cluster.id=$KAFKA_UUID
 EOF
 
     "$KAFKA_HOME/bin/kafka-storage.sh" format \
         --config "$KAFKA_DATA/server.properties" \
         --cluster-id "$KAFKA_UUID"
 
-    "$KAFKA_HOME/bin/kafka-server-start.sh" "$KAFKA_DATA/server.properties" &
+    "$KAFKA_HOME/bin/kafka-server-start.sh" "$KAFKA_DATA/server.properties" >/dev/null 2>&1 &
     KAFKA_PID=$!
-    sleep 5
+    echo "[compare] Waiting for Kafka on port $KAFKA_PORT..."
+    for i in $(seq 1 60); do
+        if python3 -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1',$KAFKA_PORT)); s.close()" 2>/dev/null; then
+            break
+        fi
+        sleep 0.5
+    done
 
     "$KAFKA_HOME/bin/kafka-topics.sh" --create \
         --topic "$TOPIC" --partitions 1 --replication-factor 1 \
