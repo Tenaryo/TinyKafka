@@ -90,6 +90,7 @@ listeners=PLAINTEXT://localhost:$KAFKA_PORT,CONTROLLER://localhost:9094
 advertised.listeners=PLAINTEXT://localhost:$KAFKA_PORT
 controller.listener.names=CONTROLLER
 listener.security.protocol.map=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+inter.broker.listener.name=PLAINTEXT
 log.dirs=$KAFKA_DATA/logs
 EOF
 
