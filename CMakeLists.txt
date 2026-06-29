@@ -6,6 +6,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_library(TinyKafka_core STATIC
     src/broker/broker.cpp
+    src/broker/group_coordinator.cpp
     src/cluster/metadata.cpp
     src/config/config.cpp
     src/config/properties.cpp

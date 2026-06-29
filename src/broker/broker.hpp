@@ -6,17 +6,11 @@
 #include <string>
 #include <unordered_map>
 
+#include "broker/group_coordinator.hpp"
 #include "broker/partition_context.hpp"
 #include "cluster/metadata.hpp"
 #include "protocol/request.hpp"
 #include "protocol/response.hpp"
-
-enum class GroupState : uint8_t {
-    Empty,
-    AwaitingSync,
-    Stable,
-    Dead,
-};
 
 class Broker {
   public:
@@ -38,13 +32,5 @@ class Broker {
     std::string log_root_;
     std::mutex contexts_mutex_;
     std::unordered_map<std::string, std::unique_ptr<broker::PartitionContext>> partition_contexts_;
-    std::unordered_map<std::string,
-                       std::unordered_map<std::string, std::unordered_map<int32_t, int64_t>>>
-        group_offsets_;
-    std::unordered_map<std::string, std::vector<JoinGroupMember>> group_members_;
-    std::unordered_map<std::string, int32_t> group_generations_;
-    std::unordered_map<std::string, GroupState> group_states_;
-    std::unordered_map<std::string, std::unordered_map<std::string, std::vector<uint8_t>>>
-        member_assignments_;
-    int32_t next_member_id_{0};
+    GroupCoordinator coordinator_;
 };
