@@ -295,13 +295,13 @@ TEST(IntegrationTest, ServerHandlesApiVersionsValidVersion) {
     auto sent = send(sock, request.data(), request.size(), 0);
     ASSERT_GE(sent, 0) << "Failed to send request";
 
-    auto response = read_exactly<100>(sock);
+    auto response = read_exactly<107>(sock);
     close(sock);
 
     EXPECT_EQ(response[0], 0x00);
     EXPECT_EQ(response[1], 0x00);
     EXPECT_EQ(response[2], 0x00);
-    EXPECT_EQ(response[3], 0x60); // message_size = 96
+    EXPECT_EQ(response[3], 0x67); // message_size = 103
 
     int32_t echoed_correlation_id =
         decode_int32_be_response(std::span<const uint8_t, 4>{response.data() + 4, 4});
@@ -310,7 +310,7 @@ TEST(IntegrationTest, ServerHandlesApiVersionsValidVersion) {
     int16_t error_code = static_cast<int16_t>((static_cast<int16_t>(response[8]) << 8) |
                                               static_cast<int16_t>(response[9]));
     EXPECT_EQ(error_code, 0);
-    EXPECT_EQ(response[10], 0x0D); // compact array length = 12 (varint: 12+1=13=0x0D)
+    EXPECT_EQ(response[10], 0x0E); // compact array length = 13 (varint: 13+1=14=0x0E)
     EXPECT_EQ(response[11], 0x00);
     EXPECT_EQ(response[12], 0x00); // api_key = 0 (Produce)
     EXPECT_EQ(response[13], 0x00);
@@ -375,31 +375,38 @@ TEST(IntegrationTest, ServerHandlesApiVersionsValidVersion) {
     EXPECT_EQ(response[72], 0x04); // max_version = 4
     EXPECT_EQ(response[73], 0x00); // TAG_BUFFER (entry 8)
     EXPECT_EQ(response[74], 0x00);
-    EXPECT_EQ(response[75], 0x0E); // api_key = 14 (SyncGroup)
+    EXPECT_EQ(response[75], 0x0D); // api_key = 13 (LeaveGroup)
     EXPECT_EQ(response[76], 0x00);
     EXPECT_EQ(response[77], 0x00); // min_version = 0
     EXPECT_EQ(response[78], 0x00);
     EXPECT_EQ(response[79], 0x05); // max_version = 5
     EXPECT_EQ(response[80], 0x00); // TAG_BUFFER (entry 9)
     EXPECT_EQ(response[81], 0x00);
-    EXPECT_EQ(response[82], 0x12); // api_key = 18 (ApiVersions)
+    EXPECT_EQ(response[82], 0x0E); // api_key = 14 (SyncGroup)
     EXPECT_EQ(response[83], 0x00);
     EXPECT_EQ(response[84], 0x00); // min_version = 0
     EXPECT_EQ(response[85], 0x00);
-    EXPECT_EQ(response[86], 0x04); // max_version = 4
+    EXPECT_EQ(response[86], 0x05); // max_version = 5
     EXPECT_EQ(response[87], 0x00); // TAG_BUFFER (entry 10)
     EXPECT_EQ(response[88], 0x00);
-    EXPECT_EQ(response[89], 0x4B); // api_key = 75 (DescribeTopicPartitions)
+    EXPECT_EQ(response[89], 0x12); // api_key = 18 (ApiVersions)
     EXPECT_EQ(response[90], 0x00);
     EXPECT_EQ(response[91], 0x00); // min_version = 0
     EXPECT_EQ(response[92], 0x00);
-    EXPECT_EQ(response[93], 0x00); // max_version = 0
+    EXPECT_EQ(response[93], 0x04); // max_version = 4
     EXPECT_EQ(response[94], 0x00); // TAG_BUFFER (entry 11)
     EXPECT_EQ(response[95], 0x00);
-    EXPECT_EQ(response[96], 0x00);
+    EXPECT_EQ(response[96], 0x4B); // api_key = 75 (DescribeTopicPartitions)
     EXPECT_EQ(response[97], 0x00);
-    EXPECT_EQ(response[98], 0x00); // throttle_time_ms = 0
-    EXPECT_EQ(response[99], 0x00); // TAG_BUFFER
+    EXPECT_EQ(response[98], 0x00); // min_version = 0
+    EXPECT_EQ(response[99], 0x00);
+    EXPECT_EQ(response[100], 0x00); // max_version = 0
+    EXPECT_EQ(response[101], 0x00); // TAG_BUFFER (entry 12)
+    EXPECT_EQ(response[102], 0x00);
+    EXPECT_EQ(response[103], 0x00);
+    EXPECT_EQ(response[104], 0x00);
+    EXPECT_EQ(response[105], 0x00); // throttle_time_ms = 0
+    EXPECT_EQ(response[106], 0x00); // TAG_BUFFER
 }
 
 TEST(IntegrationTest, ServerHandlesMultipleRequestsSameConnection) {

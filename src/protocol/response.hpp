@@ -202,12 +202,19 @@ struct HeartbeatResponse {
     int16_t error_code;
 };
 
+struct LeaveGroupResponse {
+    int32_t correlation_id;
+    int32_t throttle_time_ms;
+    int16_t error_code;
+};
+
 using Response = std::variant<ApiVersionsResponse,
                               DescribeTopicPartitionsResponse,
                               FetchResponse,
                               FindCoordinatorResponse,
                               HeartbeatResponse,
                               JoinGroupResponse,
+                              LeaveGroupResponse,
                               ListOffsetsResponse,
                               MetadataResponse,
                               OffsetCommitResponse,

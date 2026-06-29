@@ -1564,3 +1564,101 @@ TEST(BrokerTest, GroupStateHeartbeatDuringAwaitingSync) {
         EXPECT_EQ(r->error_code, 0);
     }
 }
+
+TEST(BrokerTest, LeaveGroupRemovesMemberAndTransitionsToEmpty) {
+    Broker broker(ClusterMetadata{}, "");
+
+    std::string member;
+    {
+        RequestHeader header{11, 0, 42};
+        JoinGroupRequest req{header, "lg", 30000, "", "consumer", {{"range", {}}}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<JoinGroupResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        member = r->member_id;
+    }
+
+    {
+        RequestHeader header{13, 0, 43};
+        LeaveGroupRequest req{header, "lg", member};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<LeaveGroupResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 0);
+    }
+
+    {
+        RequestHeader header{12, 0, 44};
+        HeartbeatRequest req{header, "lg", 1, member, {}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<HeartbeatResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 82);
+    }
+}
+
+TEST(BrokerTest, LeaveGroupReturnsUnknownMemberId) {
+    Broker broker(ClusterMetadata{}, "");
+
+    {
+        RequestHeader header{11, 0, 42};
+        JoinGroupRequest req{header, "lg2", 30000, "", "consumer", {{"range", {}}}};
+        auto resp = broker.handle(req);
+        ASSERT_NE(std::get_if<JoinGroupResponse>(&resp), nullptr);
+    }
+
+    {
+        RequestHeader header{13, 0, 43};
+        LeaveGroupRequest req{header, "lg2", "ghost"};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<LeaveGroupResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 25);
+    }
+}
+
+TEST(BrokerTest, LeaveGroupOneOfTwoMembersTransitionsToAwaitingSync) {
+    Broker broker(ClusterMetadata{}, "");
+
+    std::string member_a;
+    {
+        RequestHeader header{11, 0, 42};
+        JoinGroupRequest req{header, "lg3", 30000, "a", "consumer", {{"range", {}}}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<JoinGroupResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->generation_id, 1);
+        member_a = r->member_id;
+    }
+
+    int32_t gen_b;
+    std::string member_b;
+    {
+        RequestHeader header{11, 0, 43};
+        JoinGroupRequest req{header, "lg3", 30000, "b", "consumer", {{"range", {}}}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<JoinGroupResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->generation_id, 2);
+        gen_b = r->generation_id;
+        member_b = r->member_id;
+    }
+
+    {
+        RequestHeader header{13, 0, 44};
+        LeaveGroupRequest req{header, "lg3", member_a};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<LeaveGroupResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 0);
+    }
+
+    {
+        RequestHeader header{12, 0, 45};
+        HeartbeatRequest req{header, "lg3", gen_b, member_b, {}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<HeartbeatResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 82);
+    }
+}

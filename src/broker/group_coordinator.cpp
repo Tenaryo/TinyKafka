@@ -179,6 +179,33 @@ auto GroupCoordinator::handle_heartbeat(const HeartbeatRequest& r) -> HeartbeatR
     };
 }
 
+auto GroupCoordinator::handle_leave_group(const LeaveGroupRequest& r) -> LeaveGroupResponse {
+    std::lock_guard lock(mutex_);
+
+    int16_t error_code = 25;
+    auto it = groups_.find(r.group_id);
+    if (it != groups_.end()) {
+        auto& meta = it->second;
+        auto old_size = meta.members.size();
+        std::erase_if(meta.members, [&r](const auto& m) { return m.member_id == r.member_id; });
+        if (meta.members.size() < old_size) {
+            error_code = 0;
+            if (meta.members.empty()) {
+                meta.state = GroupState::Empty;
+            } else {
+                meta.state = GroupState::AwaitingSync;
+                ++meta.generation;
+            }
+        }
+    }
+
+    return LeaveGroupResponse{
+        .correlation_id = r.header.correlation_id,
+        .throttle_time_ms = 0,
+        .error_code = error_code,
+    };
+}
+
 auto GroupCoordinator::handle_offset_commit(const OffsetCommitRequest& r) -> OffsetCommitResponse {
     std::lock_guard lock(mutex_);
 

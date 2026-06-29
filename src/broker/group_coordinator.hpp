@@ -40,6 +40,7 @@ class GroupCoordinator {
     auto handle_join_group(const JoinGroupRequest& r) -> JoinGroupResponse;
     auto handle_sync_group(const SyncGroupRequest& r) -> SyncGroupResponse;
     auto handle_heartbeat(const HeartbeatRequest& r) -> HeartbeatResponse;
+    auto handle_leave_group(const LeaveGroupRequest& r) -> LeaveGroupResponse;
     auto handle_offset_commit(const OffsetCommitRequest& r) -> OffsetCommitResponse;
     auto handle_offset_fetch(const OffsetFetchRequest& r) -> OffsetFetchResponse;
   private:

@@ -469,6 +469,19 @@ auto serialize(const Response& resp) -> std::vector<std::uint8_t> {
                 writer.write_int8(0x00);
                 return buf;
             },
+            [](const LeaveGroupResponse& r) -> std::vector<std::uint8_t> {
+                size_t body_size = 4 + 1 + 4 + 2 + 1;
+                std::vector<uint8_t> buf(4 + body_size);
+                ByteWriter writer(buf);
+
+                writer.write_int32(static_cast<int32_t>(body_size));
+                writer.write_int32(r.correlation_id);
+                writer.write_int8(0x00);
+                writer.write_int32(r.throttle_time_ms);
+                writer.write_int16(r.error_code);
+                writer.write_int8(0x00);
+                return buf;
+            },
             [](const SyncGroupResponse& r) -> std::vector<std::uint8_t> {
                 uint32_t pt_varint =
                     r.protocol_type.empty() ? 0 : static_cast<uint32_t>(r.protocol_type.size()) + 1;

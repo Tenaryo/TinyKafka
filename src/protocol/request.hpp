@@ -144,12 +144,19 @@ struct HeartbeatRequest {
     std::string group_instance_id;
 };
 
+struct LeaveGroupRequest {
+    RequestHeader header;
+    std::string group_id;
+    std::string member_id;
+};
+
 using Request = std::variant<ApiVersionsRequest,
                              DescribeTopicPartitionsRequest,
                              FetchRequest,
                              FindCoordinatorRequest,
                              HeartbeatRequest,
                              JoinGroupRequest,
+                             LeaveGroupRequest,
                              ListOffsetsRequest,
                              MetadataRequest,
                              OffsetCommitRequest,

@@ -101,6 +101,9 @@ auto Broker::handle(const Request& req) -> Response {
             [this](const HeartbeatRequest& r) -> Response {
                 return coordinator_.handle_heartbeat(r);
             },
+            [this](const LeaveGroupRequest& r) -> Response {
+                return coordinator_.handle_leave_group(r);
+            },
             [this](const SyncGroupRequest& r) -> Response {
                 return coordinator_.handle_sync_group(r);
             },

@@ -787,6 +787,42 @@ auto parse_request(std::span<const std::uint8_t> buf) -> std::expected<Request, 
                                 std::move(*member_id),
                                 std::move(*group_instance_id)};
     }
+    case 13: {
+        auto client_id_len = reader.read_int16();
+        if (!client_id_len) {
+            return std::unexpected(client_id_len.error());
+        }
+        if (*client_id_len > 0) {
+            auto skip_client = reader.skip(static_cast<size_t>(*client_id_len));
+            if (!skip_client) {
+                return std::unexpected(skip_client.error());
+            }
+        }
+        auto header_tag = reader.skip(1);
+        if (!header_tag) {
+            return std::unexpected(header_tag.error());
+        }
+
+        auto group_id = reader.read_compact_string();
+        if (!group_id) {
+            return std::unexpected(group_id.error());
+        }
+        auto member_id = reader.read_compact_string();
+        if (!member_id) {
+            return std::unexpected(member_id.error());
+        }
+
+        auto body_tag = reader.skip(1);
+        if (!body_tag) {
+            return std::unexpected(body_tag.error());
+        }
+
+        return LeaveGroupRequest{
+            RequestHeader{*api_key, *api_version, *correlation_id},
+            std::move(*group_id),
+            std::move(*member_id),
+        };
+    }
     case 14: {
         auto client_id_len = reader.read_int16();
         if (!client_id_len) {
