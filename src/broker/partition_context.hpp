@@ -45,6 +45,8 @@ class PartitionContext {
             return {};
         }
 
+        int32_t record_count = static_cast<int32_t>(values->size());
+
         auto now = std::chrono::system_clock::now();
         auto append_time =
             std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
@@ -56,41 +58,34 @@ class PartitionContext {
             return {};
         }
 
+        size_t blob_size = record_batch_data.size();
+
+        if (segment_bytes_ > 0 && current_segment_bytes_ + blob_size > segment_bytes_) {
+            current_segment_base_offset_ = next_offset_;
+            current_segment_bytes_ = 0;
+            current_segment_index_.clear();
+        }
+
+        if (next_offset_ % kSparseIndexInterval == 0) {
+            current_segment_index_.push_back(
+                {.offset = next_offset_, .file_position = current_segment_bytes_});
+        }
+
         auto path = std::format("{}/{:020d}.log", dir, current_segment_base_offset_);
         std::ofstream file(path, std::ios::binary | std::ios::app);
         if (!file) {
             return {};
         }
 
-        auto base_offset = next_offset_;
-        for (const auto& value : *values) {
-            if (segment_bytes_ > 0 && current_segment_bytes_ + value.size() > segment_bytes_) {
-                file.close();
-                current_segment_base_offset_ = next_offset_;
-                current_segment_bytes_ = 0;
-                current_segment_index_.clear();
-                path = std::format("{}/{:020d}.log", dir, current_segment_base_offset_);
-                file.open(path, std::ios::binary | std::ios::app);
-                if (!file) {
-                    next_offset_ = base_offset;
-                    return {};
-                }
-            }
-
-            if (next_offset_ % kSparseIndexInterval == 0) {
-                current_segment_index_.push_back(
-                    {.offset = next_offset_, .file_position = current_segment_bytes_});
-            }
-
-            file.write(reinterpret_cast<const char*>(value.data()),
-                       static_cast<std::streamsize>(value.size()));
-            if (!file) {
-                next_offset_ = base_offset;
-                return {};
-            }
-            current_segment_bytes_ += value.size();
-            ++next_offset_;
+        file.write(reinterpret_cast<const char*>(record_batch_data.data()),
+                   static_cast<std::streamsize>(blob_size));
+        if (!file) {
+            return {};
         }
+
+        auto base_offset = next_offset_;
+        current_segment_bytes_ += blob_size;
+        next_offset_ += record_count;
         return {.base_offset = base_offset, .log_append_time_ms = append_time};
     }
 

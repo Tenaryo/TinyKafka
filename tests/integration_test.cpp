@@ -1241,11 +1241,11 @@ TEST(IntegrationTest, ProduceRequestPersistsRecordBatchToDisk) {
     std::ifstream log_file(log_path, std::ios::binary | std::ios::ate);
     ASSERT_TRUE(log_file.is_open());
     auto file_sz = log_file.tellg();
-    ASSERT_EQ(static_cast<size_t>(file_sz), record_value.size());
+    ASSERT_EQ(static_cast<size_t>(file_sz), record_batch.size());
     log_file.seekg(0);
     std::vector<uint8_t> disk_buf(static_cast<size_t>(file_sz));
     log_file.read(reinterpret_cast<char*>(disk_buf.data()), file_sz);
-    EXPECT_EQ(disk_buf, record_value);
+    EXPECT_EQ(disk_buf, record_batch);
 }
 
 TEST(IntegrationTest, ServerHandlesMetadataRequest) {

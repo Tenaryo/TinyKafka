@@ -95,7 +95,6 @@ auto make_record_batch_v2(const std::vector<std::vector<uint8_t>>& record_values
     }
 
     int32_t batch_len = static_cast<int32_t>(buf.size() - batch_len_pos - 4);
-    push_be32(buf, batch_len);
     buf[batch_len_pos] = static_cast<uint8_t>((batch_len >> 24) & 0xFF);
     buf[batch_len_pos + 1] = static_cast<uint8_t>((batch_len >> 16) & 0xFF);
     buf[batch_len_pos + 2] = static_cast<uint8_t>((batch_len >> 8) & 0xFF);
@@ -668,11 +667,11 @@ TEST(BrokerTest, HandlesProduceRequestWritesToDisk) {
     std::ifstream f(log_path, std::ios::binary | std::ios::ate);
     ASSERT_TRUE(f.is_open());
     auto sz = f.tellg();
-    ASSERT_EQ(static_cast<size_t>(sz), record_value.size());
+    ASSERT_EQ(static_cast<size_t>(sz), record_batch.size());
     f.seekg(0);
     std::vector<uint8_t> readback(static_cast<size_t>(sz));
     f.read(reinterpret_cast<char*>(readback.data()), sz);
-    EXPECT_EQ(readback, record_value);
+    EXPECT_EQ(readback, record_batch);
 
     std::filesystem::remove_all(tmp_dir);
 }
@@ -774,7 +773,8 @@ TEST(BrokerTest, ProducesSequentialOffsets) {
     std::ifstream f(log_path, std::ios::binary | std::ios::ate);
     ASSERT_TRUE(f.is_open());
     auto sz = f.tellg();
-    ASSERT_EQ(static_cast<size_t>(sz), 9u);
+    const auto kBatchSize = make_record_batch_v2({{0x00, 0x01, 0x02}}).size();
+    ASSERT_EQ(static_cast<size_t>(sz), kBatchSize * 3);
 
     std::filesystem::remove_all(tmp_dir);
 }
@@ -844,7 +844,8 @@ TEST(BrokerTest, ProducesConcurrentSamePartition) {
     std::ifstream f(log_path, std::ios::binary | std::ios::ate);
     ASSERT_TRUE(f.is_open());
     auto sz = f.tellg();
-    ASSERT_EQ(static_cast<size_t>(sz), static_cast<size_t>(kThreads) * 4u);
+    const auto kBatchSize = make_record_batch_v2({{0x00, 0x01, 0x02, 0x03}}).size();
+    ASSERT_EQ(static_cast<size_t>(sz), kBatchSize * static_cast<size_t>(kThreads));
 
     std::filesystem::remove_all(tmp_dir);
 }
@@ -911,7 +912,8 @@ TEST(BrokerTest, ProducesConcurrentDifferentPartitions) {
         std::ifstream f(log_path, std::ios::binary | std::ios::ate);
         ASSERT_TRUE(f.is_open());
         auto sz = f.tellg();
-        ASSERT_EQ(static_cast<size_t>(sz), 10u);
+        const auto kBatchSize = make_record_batch_v2({{0x00, 0xFF}}).size();
+        ASSERT_EQ(static_cast<size_t>(sz), kBatchSize * 5);
     }
 
     std::filesystem::remove_all(tmp_dir);
@@ -972,9 +974,9 @@ TEST(BrokerTest, FetchReturnsProducedRecords) {
         ASSERT_EQ(r->responses.size(), 1u);
         ASSERT_EQ(r->responses[0].partitions.size(), 2u);
         EXPECT_EQ(r->responses[0].partitions[0].error_code, 0);
-        EXPECT_EQ(r->responses[0].partitions[0].records, batch0_val);
+        EXPECT_EQ(r->responses[0].partitions[0].records, batch0);
         EXPECT_EQ(r->responses[0].partitions[1].error_code, 0);
-        EXPECT_EQ(r->responses[0].partitions[1].records, batch1_val);
+        EXPECT_EQ(r->responses[0].partitions[1].records, batch1);
     }
 
     std::filesystem::remove_all(tmp_dir);
@@ -1797,9 +1799,13 @@ TEST(BrokerTest, SegmentRollCreatesNewFile) {
         if (entry.path().filename().string().ends_with(".log"))
             ++file_count;
     }
-    EXPECT_EQ(file_count, 2);
+    EXPECT_EQ(file_count, 3);
 
     EXPECT_TRUE(fs::exists(tmp_dir + "/orders-0/00000000000000000000.log"));
+
+    auto seg1_batch = make_record_batch_v2({value1});
+    auto seg2_batch = make_record_batch_v2({value2});
+    auto seg3_batch = make_record_batch_v2({value3});
 
     {
         RequestHeader header{1, 16, 200};
@@ -1811,7 +1817,8 @@ TEST(BrokerTest, SegmentRollCreatesNewFile) {
         ASSERT_EQ(r->responses.size(), 1u);
         ASSERT_EQ(r->responses[0].partitions.size(), 1u);
         EXPECT_EQ(r->responses[0].partitions[0].error_code, 0);
-        EXPECT_EQ(r->responses[0].partitions[0].records.size(), 60u);
+        EXPECT_EQ(r->responses[0].partitions[0].records.size(),
+                  seg1_batch.size() + seg2_batch.size() + seg3_batch.size());
     }
 
     fs::remove_all(tmp_dir);
@@ -1872,12 +1879,14 @@ TEST(BrokerTest, SegmentReadsAllFilesInOrder) {
         EXPECT_EQ(r->responses[0].partitions[0].error_code, 0);
 
         const auto& records = r->responses[0].partitions[0].records;
-        ASSERT_EQ(records.size(), 60u);
-        for (size_t i = 0; i < 20; ++i) {
-            EXPECT_EQ(records[i], 0x01);
-            EXPECT_EQ(records[20 + i], 0x02);
-            EXPECT_EQ(records[40 + i], 0x03);
-        }
+        auto seg1_batch = make_record_batch_v2({value1});
+        auto seg2_batch = make_record_batch_v2({value2});
+        auto seg3_batch = make_record_batch_v2({value3});
+        std::vector<uint8_t> expected;
+        expected.insert(expected.end(), seg1_batch.begin(), seg1_batch.end());
+        expected.insert(expected.end(), seg2_batch.begin(), seg2_batch.end());
+        expected.insert(expected.end(), seg3_batch.begin(), seg3_batch.end());
+        EXPECT_EQ(records, expected);
     }
 
     std::filesystem::remove_all(tmp_dir);
@@ -1897,7 +1906,7 @@ TEST(BrokerTest, SparseIndexRecordsEntriesAtIntervals) {
     EXPECT_EQ(index[0].offset, 0);
     EXPECT_EQ(index[0].file_position, 0u);
     EXPECT_EQ(index[1].offset, 1000);
-    EXPECT_EQ(index[1].file_position, 1000u);
+    EXPECT_EQ(index[1].file_position, 1000 * make_record_batch_v2({{0x01}}).size());
 
     std::filesystem::remove_all(tmp_dir);
 }
@@ -1977,8 +1986,7 @@ TEST(BrokerTest, FetchWithOffsetReturnsSubset) {
         ASSERT_EQ(r->responses[0].partitions.size(), 1u);
         EXPECT_EQ(r->responses[0].partitions[0].error_code, 0);
         EXPECT_FALSE(r->responses[0].partitions[0].records.empty());
-        EXPECT_EQ(r->responses[0].partitions[0].records,
-                  std::vector<uint8_t>({0x01, 0x02, 0x02, 0x03}));
+        EXPECT_EQ(r->responses[0].partitions[0].records, std::vector<uint8_t>({0x02, 0x02, 0x03}));
     }
 
     std::filesystem::remove_all(tmp_dir);
@@ -2030,11 +2038,11 @@ TEST(BrokerTest, GroupCommitWritesMultipleRecordsSingleBatch) {
     std::ifstream f(log_path, std::ios::binary | std::ios::ate);
     ASSERT_TRUE(f.is_open());
     auto sz = f.tellg();
-    ASSERT_EQ(static_cast<size_t>(sz), 6u);
+    ASSERT_EQ(static_cast<size_t>(sz), batch.size());
     f.seekg(0);
     std::vector<uint8_t> readback(static_cast<size_t>(sz));
     f.read(reinterpret_cast<char*>(readback.data()), sz);
-    EXPECT_EQ(readback, (std::vector<uint8_t>{0x01, 0x02, 0x03, 0x04, 0x05, 0x06}));
+    EXPECT_EQ(readback, batch);
 
     std::filesystem::remove_all(tmp_dir);
 }
