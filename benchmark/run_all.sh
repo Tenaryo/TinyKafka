@@ -10,7 +10,7 @@ BENCH_BIN="$PROJECT_DIR/benchmark/build/producer_bench"
 LOGROOT="$RESULTS_DIR/kafka-logs"
 TOPIC="bench"
 MESSAGES=50000
-SIZES=(100 1024 10240)
+SIZES=(100 1024 10240 102400)
 CSV_FILES=()
 
 mkdir -p "$RESULTS_DIR"
@@ -68,9 +68,11 @@ COMPARISON="$RESULTS_DIR/comparison.md"
 
     for CSV in "${CSV_FILES[@]}"; do
         TAIL=$(tail -1 "$CSV")
-        IFS=',' read -r MSG SIZE_STR BATCH TIME_S TP_MSG TP_MB AVG P50 P99 P999 <<<"$TAIL"
+        IFS=',' read -r MSG SIZE_STR BATCH CONC TIME_S TP_MSG TP_MB AVG P50 P99 P999 <<<"$TAIL"
         SIZE_LABEL="${SIZE_STR}B"
-        if [[ "$SIZE_STR" -ge 10240 ]]; then
+        if [[ "$SIZE_STR" -ge 102400 ]]; then
+            SIZE_LABEL="100KB"
+        elif [[ "$SIZE_STR" -ge 10240 ]]; then
             SIZE_LABEL="10KB"
         elif [[ "$SIZE_STR" -ge 1024 ]]; then
             SIZE_LABEL="1KB"

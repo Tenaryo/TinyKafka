@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -7,10 +8,13 @@
 #include <format>
 #include <fstream>
 #include <iostream>
+#include <latch>
+#include <mutex>
 #include <numeric>
 #include <span>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 #include <arpa/inet.h>
@@ -24,6 +28,7 @@ struct Config {
     int messages = 10000;
     int size = 100;
     int batch_size = 1;
+    int concurrency = 1;
     std::string topic = "bench";
     std::string csv_path;
     uint16_t port = 9092;
@@ -191,6 +196,8 @@ Config parse_args(int argc, char** argv) {
             c.csv_path = std::string{arg.substr(6)};
         } else if (arg.starts_with("--port=")) {
             c.port = static_cast<uint16_t>(std::stoi(std::string{arg.substr(7)}));
+        } else if (arg.starts_with("--concurrency=")) {
+            c.concurrency = std::stoi(std::string{arg.substr(14)});
         }
     }
     return c;
@@ -201,54 +208,78 @@ Config parse_args(int argc, char** argv) {
 int main(int argc, char** argv) {
     auto config = parse_args(argc, argv);
 
-    int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) {
-        std::cerr << "socket failed\n";
-        return 1;
-    }
-
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(config.port);
-    inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-
-    if (::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
-        std::cerr << "connect failed\n";
-        ::close(fd);
-        return 1;
-    }
-
     std::vector<uint8_t> payload(static_cast<size_t>(config.size), 0x42);
     auto record_batch = make_record_batch(payload);
 
+    std::mutex lat_mutex;
     std::vector<double> latencies_us;
     latencies_us.reserve(static_cast<size_t>(config.messages));
+
+    std::latch latch(static_cast<ptrdiff_t>(config.concurrency));
 
     using Clock = std::chrono::high_resolution_clock;
     auto total_start = Clock::now();
 
-    for (int i = 0; i < config.messages; ++i) {
-        auto req = build_produce_request(i, config.topic, record_batch);
-        auto msg_start = Clock::now();
+    std::vector<std::thread> threads;
+    threads.reserve(static_cast<size_t>(config.concurrency));
+    int per_thread = config.messages / config.concurrency;
 
-        auto sent = ::send(fd, req.data(), req.size(), 0);
-        if (sent < 0) {
-            std::cerr << "send failed at message " << i << "\n";
-            break;
-        }
+    for (int t = 0; t < config.concurrency; ++t) {
+        threads.emplace_back([&, t, per_thread] {
+            int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+            if (fd < 0) {
+                std::cerr << "socket failed\n";
+                return;
+            }
+            sockaddr_in addr{};
+            addr.sin_family = AF_INET;
+            addr.sin_port = htons(config.port);
+            inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+            if (::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
+                std::cerr << "connect failed\n";
+                ::close(fd);
+                return;
+            }
 
-        if (!read_response(fd)) {
-            std::cerr << "read response failed at message " << i << "\n";
-            break;
-        }
+            latch.arrive_and_wait();
 
-        auto elapsed =
-            std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - msg_start).count();
-        latencies_us.push_back(static_cast<double>(elapsed));
+            std::vector<double> local_latencies;
+            local_latencies.reserve(static_cast<size_t>(per_thread));
+
+            int base_cid = t * per_thread;
+            for (int i = 0; i < per_thread; ++i) {
+                auto req = build_produce_request(base_cid + i, config.topic, record_batch);
+                auto msg_start = Clock::now();
+
+                auto sent = ::send(fd, req.data(), req.size(), 0);
+                if (sent < 0) {
+                    std::cerr << "send failed at thread " << t << " message " << i << "\n";
+                    break;
+                }
+
+                if (!read_response(fd)) {
+                    std::cerr << "read response failed at thread " << t << " message " << i << "\n";
+                    break;
+                }
+
+                auto elapsed =
+                    std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - msg_start)
+                        .count();
+                local_latencies.push_back(static_cast<double>(elapsed));
+            }
+
+            ::close(fd);
+
+            std::lock_guard lock(lat_mutex);
+            latencies_us.insert(latencies_us.end(), local_latencies.begin(), local_latencies.end());
+        });
+    }
+
+    for (auto& t : threads) {
+        t.join();
     }
 
     auto total_end = Clock::now();
-    ::close(fd);
 
     auto total_s = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(
                                            total_end - total_start)
@@ -279,7 +310,7 @@ int main(int argc, char** argv) {
               << sep << '\n'
               << row("Messages sent", std::to_string(count)) << '\n'
               << row("Message size (B)", std::to_string(config.size)) << '\n'
-              << row("Batch size", std::to_string(config.batch_size)) << '\n'
+              << row("Concurrency", std::to_string(config.concurrency)) << '\n'
               << row("Total time (s)", std::format("{:.4f}", total_s)) << '\n'
               << row("Throughput (msg/s)", std::format("{:.1f}", throughput_msg)) << '\n'
               << row("Throughput (MB/s)", std::format("{:.2f}", throughput_mb)) << '\n'
@@ -292,11 +323,14 @@ int main(int argc, char** argv) {
     if (!config.csv_path.empty()) {
         std::ofstream csv(config.csv_path);
         if (csv) {
-            csv << "messages,size,batch_size,time_s,throughput_msg_s,throughput_mb_s,avg_us,p50_us,"
+            csv << "messages,size,batch_size,concurrency,time_s,throughput_msg_s,throughput_mb_s,"
+                   "avg_"
+                   "us,p50_us,"
                    "p99_us,p999_us\n";
-            csv << count << ',' << config.size << ',' << config.batch_size << ',' << total_s << ','
-                << throughput_msg << ',' << throughput_mb << ',' << avg_lat << ',' << p50 << ','
-                << p99 << ',' << p999 << '\n';
+            csv << count << ',' << config.size << ',' << config.batch_size << ','
+                << config.concurrency << ',' << total_s << ',' << throughput_msg << ','
+                << throughput_mb << ',' << avg_lat << ',' << p50 << ',' << p99 << ',' << p999
+                << '\n';
         }
     }
 
