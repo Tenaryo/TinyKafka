@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include "broker/broker.hpp"
+#include "broker/partition_context.hpp"
 #include "cluster/metadata.hpp"
 #include "util/record_batch.hpp"
 
@@ -1878,6 +1879,46 @@ TEST(BrokerTest, SegmentReadsAllFilesInOrder) {
             EXPECT_EQ(records[40 + i], 0x03);
         }
     }
+
+    std::filesystem::remove_all(tmp_dir);
+}
+
+TEST(BrokerTest, SparseIndexRecordsEntriesAtIntervals) {
+    auto tmp_dir = make_tmp_log_dir();
+    broker::PartitionContext ctx(tmp_dir, "sparse", 0, 0);
+
+    for (int i = 0; i < 2000; ++i) {
+        auto result = ctx.produce(make_record_batch_v2({{0x01}}));
+        ASSERT_EQ(result.base_offset, i);
+    }
+
+    auto index = ctx.segment_index();
+    ASSERT_EQ(index.size(), 2u);
+    EXPECT_EQ(index[0].offset, 0);
+    EXPECT_EQ(index[0].file_position, 0u);
+    EXPECT_EQ(index[1].offset, 1000);
+    EXPECT_EQ(index[1].file_position, 1000u);
+
+    std::filesystem::remove_all(tmp_dir);
+}
+
+TEST(BrokerTest, SparseIndexClearsOnSegmentRoll) {
+    auto tmp_dir = make_tmp_log_dir();
+    broker::PartitionContext ctx(tmp_dir, "rollidx", 0, 6);
+
+    auto first = ctx.produce(make_record_batch_v2({{0x00, 0x00, 0x00, 0x00}}));
+    EXPECT_EQ(first.base_offset, 0);
+
+    auto index_before = ctx.segment_index();
+    ASSERT_EQ(index_before.size(), 1u);
+    EXPECT_EQ(index_before[0].offset, 0);
+    EXPECT_EQ(index_before[0].file_position, 0u);
+
+    auto second = ctx.produce(make_record_batch_v2({{0x00, 0x00, 0x00, 0x00}}));
+    EXPECT_EQ(second.base_offset, 1);
+
+    auto index_after = ctx.segment_index();
+    EXPECT_TRUE(index_after.empty());
 
     std::filesystem::remove_all(tmp_dir);
 }

@@ -5,6 +5,7 @@
 #include <mutex>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "storage/log_reader.hpp"
@@ -12,6 +13,13 @@
 #include "util/record_batch.hpp"
 
 namespace broker {
+
+struct SparseIndexEntry {
+    int64_t offset;
+    size_t file_position;
+};
+
+constexpr ptrdiff_t kSparseIndexInterval = 1000;
 
 struct ProduceResult {
     int64_t base_offset = -1;
@@ -44,6 +52,12 @@ class PartitionContext {
             if (segment_bytes_ > 0 && current_segment_bytes_ + value.size() > segment_bytes_) {
                 current_segment_base_offset_ = next_offset_;
                 current_segment_bytes_ = 0;
+                current_segment_index_.clear();
+            }
+
+            if (next_offset_ % kSparseIndexInterval == 0) {
+                current_segment_index_.push_back(
+                    {.offset = next_offset_, .file_position = current_segment_bytes_});
             }
 
             auto ec = storage::write_topic_log(
@@ -67,6 +81,11 @@ class PartitionContext {
         std::lock_guard lock(mutex_);
         return next_offset_;
     }
+
+    [[nodiscard]] auto segment_index() const -> std::vector<SparseIndexEntry> {
+        std::lock_guard lock(mutex_);
+        return current_segment_index_;
+    }
   private:
     std::string log_root_;
     std::string topic_name_;
@@ -75,6 +94,7 @@ class PartitionContext {
     int64_t current_segment_base_offset_{0};
     size_t current_segment_bytes_{0};
     size_t segment_bytes_{0};
+    std::vector<SparseIndexEntry> current_segment_index_;
     mutable std::mutex mutex_;
 };
 
