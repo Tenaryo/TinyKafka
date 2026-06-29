@@ -241,6 +241,34 @@ int main(int argc, char** argv) {
                 return;
             }
 
+            {
+                using namespace std::chrono;
+                std::array<uint8_t, 35> av{};
+                av[0] = 0x00;
+                av[1] = 0x00;
+                av[2] = 0x00;
+                av[3] = 0x1F;
+                av[4] = 0x00;
+                av[5] = 0x12; // api_key = 18
+                av[6] = 0x00;
+                av[7] = 0x04; // api_version = 4
+                av[8] = 0x6f;
+                av[9] = 0x7e;
+                av[10] = 0xc6;
+                av[11] = 0x61; // corr_id = 1870644833
+                av[12] = 0x00;
+                av[13] = 0x09;
+                for (size_t ci = 0; ci < 9; ++ci)
+                    av[14 + ci] = static_cast<uint8_t>("kafka-cli"[ci]);
+                av[23] = 0x00;
+                av[24] = 0x0A;
+                for (size_t ci = 0; ci < 9; ++ci)
+                    av[25 + ci] = static_cast<uint8_t>("kafka-cli"[ci]);
+                av[34] = 0x00;
+                ::send(fd, av.data(), av.size(), 0);
+                read_response(fd);
+            }
+
             latch.arrive_and_wait();
 
             std::vector<double> local_latencies;
