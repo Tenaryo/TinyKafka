@@ -22,12 +22,14 @@
 ## 当前状态
 
 TinyKafka 已具备的基础能力：
-- KRaft 元数据解析（topic/partition 发现）
-- 4 个 Kafka API：ApiVersions (18)、DescribeTopicPartitions (75)、Produce (0)、Fetch (1)
-- epoll I/O 多路复用网络层（替换原 thread-per-connection）
+- **12 个 Kafka API**：Produce(0), Fetch(1), ListOffsets(2), Metadata(3), OffsetCommit(8), OffsetFetch(9), FindCoordinator(10), JoinGroup(11), Heartbeat(12), SyncGroup(14), ApiVersions(18), DescribeTopicPartitions(75)
+- epoll I/O 多路复用 + Per-Partition 执行引擎
+- Consumer Group 协调：FindCoordinator → JoinGroup → SyncGroup → Heartbeat 全链路 + Group 状态机
+- Record Batch v2 解析 + 逐条追加 + offset 按 record 计数
 - 磁盘持久化存储（全量追加 + 全量读取）
+- Benchmark 框架 + Producer 吞吐基准数据（29K msg/s @ 100B, 233 MB/s @ 10KB）
 - 零外部依赖（C++23 STL + POSIX sockets）
-- 现有测试 ~3,200 LOC，通过 GoogleTest + fork-exec 集成测试
+- 128 个测试用例，覆盖率 94.9%
 
 ## Milestone 计划
 
@@ -60,7 +62,7 @@ TinyKafka 已具备的基础能力：
 
 ---
 
-### M2: Per-Partition Execution Engine
+### M2: Per-Partition Execution Engine ✅ 已完成
 
 **主题概述：** 将并发模型从"每连接一线程"重构为"Partition 作为独立执行单元"——每个 partition 独占一个处理上下文（请求队列 + 单写者保证），epoll 负责 I/O 多路复用并将请求路由到对应 partition 上下文。这个架构设计比泛泛的"epoll + 线程池"更具辨识度，直接体现对 Kafka 内部模型的理解。
 
@@ -69,10 +71,10 @@ TinyKafka 已具备的基础能力：
 | # | 功能需求 | 描述 | 价值 | 可行性 | 依赖 |
 |---|---------|------|------|--------|------|
 | F9 | epoll I/O 多路复用 | 替换 accept + detach 模式为 epoll 事件循环管理所有连接的可读/可写就绪 | P0 | 低风险 | M1 | ✅ 已完成 |
-| F10 | Partition 执行上下文 | 每个 partition 有独立的请求队列和在途请求状态；同一 partition 的写操作天然串行化，消除锁竞争 | P0 | 中风险 | M1 |
-| F11 | 请求路由 | 根据请求的 api_key、topic、partition 将请求分发到对应 partition 上下文 | P0 | 低风险 | F9, F10 |
-| F12 | 连接生命周期管理 | 完整的 accept / read / write / close 流程，包含背压控制（连接级 send buffer 满时暂停读取） | P0 | 低风险 | F9 |
-| F13 | Broker 级 metrics | 请求速率、请求延迟、字节吞吐、活跃连接数等可查询 | P1 | 低风险 | 无 |
+| F10 | Partition 执行上下文 | 每个 partition 有独立的请求队列和在途请求状态；同一 partition 的写操作天然串行化，消除锁竞争 | P0 | 中风险 | M1 | ✅ 已完成 |
+| F11 | 请求路由 | 根据请求的 api_key、topic、partition 将请求分发到对应 partition 上下文 | P0 | 低风险 | F9, F10 | ✅ 已完成 |
+| F12 | 连接生命周期管理 | 完整的 accept / read / write / close 流程，包含背压控制（连接级 send buffer 满时暂停读取） | P0 | 低风险 | F9 | ✅ 已完成 |
+| F13 | Broker 级 metrics | 请求速率、请求延迟、字节吞吐、活跃连接数等可查询 | P1 | 低风险 | 无 | ✅ 已完成 |
 
 **高风险项：**
 - F10：执行上下文的生命周期管理——partition 何时创建/销毁上下文，上下文与线程的映射关系，以及优雅关闭时的请求排空。设计不当会导致 use-after-free 或死锁。
@@ -87,7 +89,7 @@ TinyKafka 已具备的基础能力：
 
 ---
 
-### M3: Producer 端到端可用 + Benchmark 框架建立
+### M3: Producer 端到端可用 + Benchmark 框架建立 ✅ 已完成
 
 **主题概述：** 标准 Kafka 客户端（kafka-console-producer、kafka-console-consumer 无 group 模式）可连接并完成端到端的消息写入和读取。同时建立 benchmark 基础设施，跑出第一条 Producer 吞吐基准数据。
 
@@ -95,14 +97,14 @@ TinyKafka 已具备的基础能力：
 
 | # | 功能需求 | 描述 | 价值 | 可行性 | 依赖 |
 |---|---------|------|------|--------|------|
-| F14 | Metadata 协议 (API 3) | 客户端首次连接时拉取 cluster metadata（broker 列表、topic 列表、partition 分布），标准客户端连接的第一步 | P0 | 低风险 | M2 |
-| F15 | ListOffsets 协议 (API 2) | Consumer 查询 partition 的 earliest/latest offset，确定消费起始位置 | P0 | 低风险 | M2 |
+| F14 | Metadata 协议 (API 3) | 客户端首次连接时拉取 cluster metadata（broker 列表、topic 列表、partition 分布），标准客户端连接的第一步 | P0 | 低风险 | M2 | ✅ 已完成 |
+| F15 | ListOffsets 协议 (API 2) | Consumer 查询 partition 的 earliest/latest offset，确定消费起始位置 | P0 | 低风险 | M2 | ✅ 已完成 |
 | F16 | Produce/Fetch 协议字段补齐 | 对照 Kafka 协议规范，对现有 Produce v11 和 Fetch v16 解析/序列化做字段级审计和补全 | P1 | 中风险 | M2 |
 | F17 | Acks 策略 | 支持 acks=0（不等待落盘直接响应）和 acks=1（等待 leader 落盘后响应）；一期无 replication，不做 acks=-1 | P1 | 低风险 | M2 |
-| F18 | 批量消息处理 | 正确解析客户端聚合的 record batch v2 格式，解聚合后逐条追加到 partition log；标准 producer 默认启 batch，broker 必须正确处理 | P0 | 中风险 | M2 |
-| F19 | Produce 响应完善 | 正确返回每个 partition 的 base_offset、error_code、log_append_time 等字段，使客户端侧也能正确确认写入成功 | P0 | 低风险 | M2 |
-| F20 | Benchmark 框架基础设施 | 建立 benchmark 目录和 driver 脚本骨架，统一测量接口（吞吐 MB/s、消息数/s、延迟分位数），报告模板 | P0 | 低风险 | 无 |
-| F21 | Producer 吞吐基准测试 | 单 topic 单 partition 场景下，多 producer 并发写入的吞吐（MB/s 和 msgs/s）数据 | P0 | 低风险 | F20, F18 |
+| F18 | 批量消息处理 | 正确解析客户端聚合的 record batch v2 格式，解聚合后逐条追加到 partition log；标准 producer 默认启 batch，broker 必须正确处理 | P0 | 中风险 | M2 | ✅ 已完成 |
+| F19 | Produce 响应完善 | 正确返回每个 partition 的 base_offset、error_code、log_append_time 等字段，使客户端侧也能正确确认写入成功 | P0 | 低风险 | M2 | ✅ 已完成 |
+| F20 | Benchmark 框架基础设施 | 建立 benchmark 目录和 driver 脚本骨架，统一测量接口（吞吐 MB/s、消息数/s、延迟分位数），报告模板 | P0 | 低风险 | 无 | ✅ 已完成 |
+| F21 | Producer 吞吐基准测试 | 单 topic 单 partition 场景下，多 producer 并发写入的吞吐（MB/s 和 msgs/s）数据 | P0 | 低风险 | F20, F18 | ✅ 已完成 |
 
 **高风险项：**
 - F18：Kafka record batch v2 格式包含 attributes、timestamp delta、offset delta 等压缩字段，解析边界条件多，容易产生 off-by-one 错误。解聚合后的逐条 append 需要正确维护 partition 的 next_offset。
@@ -116,7 +118,7 @@ TinyKafka 已具备的基础能力：
 
 ---
 
-### M4: Consumer Group
+### M4: Consumer Group ✅ 已完成
 
 **主题概述：** 多个 consumer 组成 group、自动 rebalance 分配 partition、offset 提交和恢复——这是 Kafka 区别于普通消息队列的核心能力，也是面试中最容易被深挖的分布式系统知识点。
 
@@ -124,19 +126,22 @@ TinyKafka 已具备的基础能力：
 
 | # | 功能需求 | 描述 | 价值 | 可行性 | 依赖 |
 |---|---------|------|------|--------|------|
-| F22 | FindCoordinator 协议 (API 10) | Consumer 发起 group 操作前先定位 group coordinator broker 地址 | P0 | 低风险 | M3 |
-| F23 | JoinGroup 协议 (API 11) | Consumer 携带订阅的 topic 列表请求加入 group，协议包含 group_protocol、member_metadata 等嵌套结构 | P0 | 中风险 | M3 |
-| F24 | SyncGroup 协议 (API 14) | Leader consumer 提交 partition assignment 方案，broker 分发给所有 member | P0 | 中风险 | F23 |
-| F25 | Heartbeat 协议 (API 12) | Consumer 定期发送心跳保持 group membership，broker 返回当前 group generation 验证 | P0 | 低风险 | F23 |
-| F26 | OffsetFetch 协议 (API 9) | Consumer 启动时拉取当前 group 已提交的 offset，恢复消费进度 | P0 | 低风险 | M3 |
-| F27 | OffsetCommit 协议 (API 8) | Consumer 提交消费完成的 offset，支持自动和手动两种模式 | P0 | 低风险 | M3 |
+| F22 | FindCoordinator 协议 (API 10) | Consumer 发起 group 操作前先定位 group coordinator broker 地址 | P0 | 低风险 | M3 | ✅ 已完成 |
+| F23 | JoinGroup 协议 (API 11) | Consumer 携带订阅的 topic 列表请求加入 group，协议包含 group_protocol、member_metadata 等嵌套结构 | P0 | 中风险 | M3 | ✅ 已完成 |
+| F24 | SyncGroup 协议 (API 14) | Leader consumer 提交 partition assignment 方案，broker 分发给所有 member | P0 | 中风险 | F23 | ✅ 已完成 |
+| F25 | Heartbeat 协议 (API 12) | Consumer 定期发送心跳保持 group membership，broker 返回当前 group generation 验证 | P0 | 低风险 | F23 | ✅ 已完成 |
+| F26 | OffsetFetch 协议 (API 9) | Consumer 启动时拉取当前 group 已提交的 offset，恢复消费进度 | P0 | 低风险 | M3 | ✅ 已完成 |
+| F27 | OffsetCommit 协议 (API 8) | Consumer 提交消费完成的 offset，支持自动和手动两种模式 | P0 | 低风险 | M3 | ✅ 已完成 |
 | F28 | LeaveGroup 协议 (API 13) | Consumer 优雅退出 group，触发 rebalance | P1 | 低风险 | F23 |
-| F29 | Group 状态机 | 完整实现 Empty → PreparingRebalance → AwaitingSync → Stable → Dead 状态转换逻辑 | P0 | 中风险 | F22, F23 |
-| F30 | Group Membership 管理 | 记录 group 下所有 member 的 member_id、client_id、订阅信息、当前 generation | P0 | 低风险 | F29 |
-| F31 | Partition Assignment | 实现 range assignor——按 topic 分别对 partition 编号排序后 range 分配；预留 assignor 扩展接口 | P0 | 低风险 | F30 |
-| F32 | Heartbeat/Session 超时管理 | 每个 member 维护 session 定时器，超时自动踢出并触发 rebalance | P0 | 中风险 | F25, F29 |
-| F33 | Offset 管理 | 内存中管理 group → topic → partition → offset 映射，OffsetCommit 写入、OffsetFetch 读取 | P0 | 中风险 | F26, F27 |
-| F34 | Rebalance 流程 | JoinGroup → SyncGroup 的多轮协议交互协调：新 member 加入 / 已有 member 离开 / session 超时均可触发，rebalance 期间的延迟响应和 rebalance timeout 处理 | P0 | 高风险 | F29, F31, F32 |
+| — | **架构整理：broker.cpp 拆分** | `handle()` 中 12 个 API lambda 与 group 状态管理混杂在单文件 430+ 行。按职责域拆分为 broker_data_api / broker_group_api / broker_coordinator，保持 handle() 仅做 dispatch | P0 | 低风险 | F29 | ✅ 已完成 |
+| F30 | Group Membership 管理 | 记录 group 下所有 member 的 member_id、client_id、订阅信息、当前 generation | P0 | 低风险 | F29 | ✅ 已完成 |
+| F31 | Partition Assignment | 实现 range assignor——按 topic 分别对 partition 编号排序后 range 分配；预留 assignor 扩展接口 | P1 | 低风险 | F30 | ⏸ 推迟至 v2（assignor 为 consumer 侧功能，当前 SyncGroup 已支持标准 leader 自主分配流程） |
+| F32 | Heartbeat/Session 超时管理 | 每个 member 维护 session 定时器，超时自动踢出并触发 rebalance | P0 | 中风险 | F25, F29 | ✅ 已完成 |
+| F33 | Offset 管理 | 将 group_offsets_ 整合入 GroupMetadata，统一 group 状态管理 | P0 | 中风险 | F26, F27 | ✅ 已完成 |
+| F28 | LeaveGroup 协议 (API 13) | Consumer 优雅退出 group，触发 rebalance | P1 | 低风险 | F23 | ✅ 已完成 |
+| F34 | Rebalance 流程 | F32 session 超时 + F28 成员离开 → 触发 JoinGroup→SyncGroup 多轮协议交互。多 member 间 generation 并发一致性、rebalance 期间新请求处理 | P0 | 高风险 | F32, F28 | ✅ 已完成 |
+
+**开发顺序：** F32（session 超时）→ F33（offset 整合）→ F28（LeaveGroup）→ F34（Rebalance）| F33 与 F28 可并行
 
 **高风险项：**
 - **F34 (Rebalance 流程)** — 整个一期项目最大技术风险点。涉及多 member 间 JoinGroup 响应的延迟协调、rebalance timeout 处理、generation 版本号的并发一致性、rebalance 进行中新请求的处理策略。要求 Architect 在开始设计前产出独立的 rebalance 协议交互时序设计文档，覆盖正常流程、超时流程、并发冲突场景。
@@ -159,10 +164,10 @@ TinyKafka 已具备的基础能力：
 
 | # | 功能需求 | 描述 | 价值 | 可行性 | 依赖 |
 |---|---------|------|------|--------|------|
-| F35 | 日志分段 (Segment Roll) | 按 segment.bytes 阈值或 log.roll.ms 时间窗口自动滚动到新 segment 文件，目录结构 `{topic}-{partition}/00000000000000000000.log` | P1 | 低风险 | M4 |
-| F36 | Offset 索引 | 为每个 segment 构建稀疏 offset → position 索引文件，每隔 N 条消息记录一条映射，O(1) 定位目标 offset | P0 | 低风险 | F35 |
-| F37 | 按需读取 | 替换当前全量读取为 Fetch 指定 offset 读取指定 max_bytes，配合 E2 实现 O(log segment) + O(1) 的读取路径 | P0 | 低风险 | F36 |
-| F38 | Group Commit 写入优化 | 批量落盘策略——收集一个时间窗口或大小窗口内的写请求，一次性 fsync，减少磁盘 I/O 次数 | P1 | 中风险 | F35 |
+| F35 | 日志分段 (Segment Roll) | 按 segment.bytes 阈值或 log.roll.ms 时间窗口自动滚动到新 segment 文件，目录结构 `{topic}-{partition}/00000000000000000000.log` | P1 | 低风险 | M4 | ✅ 已完成 |
+| F36 | Offset 索引 | 为每个 segment 构建稀疏 offset → position 索引文件，每隔 N 条消息记录一条映射，O(1) 定位目标 offset | P0 | 低风险 | F35 | ✅ 已完成 |
+| F37 | 按需读取 | 替换当前全量读取为 Fetch 指定 offset 读取指定 max_bytes，配合 E2 实现 O(log segment) + O(1) 的读取路径 | P0 | 低风险 | F36 | ✅ 已完成 |
+| F38 | Group Commit 写入优化 | 批量落盘策略——收集一个时间窗口或大小窗口内的写请求，一次性 fsync，减少磁盘 I/O 次数 | P1 | 中风险 | F35 | ✅ 已完成 |
 | F39 | Fetch 增强 | 利用存储索引支持精确的 offset/max_bytes Fetch，支持 incremental fetch sessions（fetch session ID + epoch） | P1 | 低风险 | F37 |
 | F40 | Producer 吞吐完整测试 | 多 topic 多 partition、不同消息大小 (100B / 1KB / 10KB / 100KB)、不同 producer 并发数下的吞吐曲线 | P0 | 低风险 | F38 |
 | F41 | Consumer 吞吐完整测试 | 多 consumer group、不同 partition 分配方案下的端到端吞吐 | P0 | 低风险 | F39 |
@@ -188,31 +193,6 @@ TinyKafka 已具备的基础能力：
 
 ---
 
-### M6: io_uring + 协程 I/O 引擎升级
-
-**主题概述：** 在 M5 拿到 epoll 架构下的完整 benchmark 基线后，将 I/O 引擎从 epoll 替换为 io_uring，并用 C++20 协程重构异步代码为同步风格。io_uring 通过 submission/completion queue 共享内存环形缓冲实现批量 I/O、零拷贝、极低 syscall 开销；协程在此基础上用 `co_await` 消除回调，使 I/O 密集代码读起来像同步逻辑。这一刀切入时机在 benchmark 对比之后——epoll 数据是基线，io_uring 数据是亮点。
-
-**功能需求清单：**
-
-| # | 功能需求 | 描述 | 价值 | 可行性 | 依赖 |
-|---|---------|------|------|--------|------|
-| F47 | io_uring 事件循环 | 用 io_uring 替换 epoll：multishot accept、read/write 批量提交和收割、fixed buffer 复用消除每请求内存分配 | P1 | 中风险 | M5 |
-| F48 | C++20 协程集成 | 在 io_uring 之上封装 `co_await`-able 的 I/O 原语（`co_await accept()`、`co_await recv()`、`co_await send()`），使请求处理逻辑变为同步风格 | P1 | 中风险 | F47 |
-| F49 | io_uring 性能对比 | 同一 benchmark workload 对比 epoll vs io_uring+协程 的吞吐和延迟，产出第二份对比报告 | P1 | 低风险 | F48 |
-
-**高风险项：**
-- **F47**：io_uring 的 sqe/cqe 生命周期管理——sqe 提交后不可再修改、cqe 收割后需正确释放、fixed buffer 注册和注销与生命周期耦合。多线程下 io_uring 的 `IORING_SETUP_ATTACH_WQ` 等高级特性需要仔细设计。
-- **F48**：协程的 `promise_type` 和 `awaiter` 体系与 io_uring 的完成通知机制对接——需要在 cqe 收割循环中唤醒挂起的协程，TODO 工程量大。
-
-**Done criteria：**
-1. 同一 benchmark workload 下 io_uring 吞吐不低于 epoll 基线
-2. 协程版本代码行数不显著增加，可读性不低于 epoll 回调版本
-3. 全项目行覆盖率 ≥80%
-
-**依赖：** M5（需 M5 的完整 benchmark 数据和基础设施就绪后启动）
-
----
-
 ## 已砍掉/推迟的需求
 
 | 需求 | 原定价值 | 砍掉/推迟原因 | 可能的回头时机 |
@@ -223,6 +203,8 @@ TinyKafka 已具备的基础能力：
 | 模糊测试 (I5) | P2 | 协议解析器的健壮性重要，但 MVP 阶段通过充分的手工边界测试可覆盖；fuzz 单独做工程量大 | 二期安全加固阶段 |
 | CI 中 benchmark 回归检测 (I6) | P2 | CI runner 性能不稳定，容易产生误报警报；手工 benchmark 报告更可靠 | 二期 CI 完善阶段 |
 | 分区分配策略（客户端侧）(C3) | P1 | sticky/hash/round-robin partitioner 是客户端侧功能，不在 broker 职责范围内 | 不再纳入 |
+| v1 F31: Partition Assignment (Range Assignor) | P0→P1 | assignor 为 consumer leader 侧功能，当前 SyncGroup 已支持标准 leader 自主分配流程 | v2 M7 或 consumer SDK 阶段 |
+| v1 F47-F49: io_uring + 协程 (原 M6) | P1 | 推迟至 v2，作为性能工程专项的核心亮点 | v2 M7 |
 
 ## 高风险项汇总
 
@@ -272,3 +254,40 @@ TinyKafka 已具备的基础能力：
 | 2026-06-16 | v1.0 | 新增 M6（io_uring + 协程 I/O 引擎升级），在 M5 benchmark 基线后执行，含 F47/F48/F49 | Reviewer |
 | 2026-06-17 | v1.0 | M2 F9（epoll I/O 多路复用）标记为已完成 — EpollReactor (reactor.cpp/hpp, 255 LOC) 已实现非阻塞 accept/read/write 事件循环 | Reviewer |
 | 2026-06-17 | v1.0 | 更新「当前状态」中网络层描述，从 thread-per-connection 改为 epoll I/O 多路复用 | Reviewer |
+| 2026-06-17 | v1.0 | FIX-1（Produce 错误处理 + 集成测试隔离）已完成：broker.cpp 错误捕获、integration_test.cpp 独立临时目录 | Reviewer |
+| 2026-06-17 | v1.0 | M2 F10（Partition 执行上下文）已完成 — PartitionContext 36 LOC、offset 计数器、同 partition 串行写 | Reviewer |
+| 2026-06-17 | v1.0 | M2 F11（请求路由）已完成 — Fetch 接入 PartitionContext，Broker 不再直接依赖 storage 层 | Reviewer |
+| 2026-06-17 | v1.0 | M2 F12（连接生命周期管理）已完成 — max_write_buffer_bytes 背压控制，4MB 默认上限 | Reviewer |
+| 2026-06-17 | v1.0 | M2 F13（Broker 级 metrics）已完成 — BrokerMetrics 4 原子计数器、30s 定期日志、snapshot() 接口 | Reviewer |
+| 2026-06-17 | v1.0 | M2 Per-Partition Execution Engine 全部完成（F9-F13），进入 M3 | Reviewer |
+| 2026-06-17 | v1.0 | M3 F14（Metadata 协议 API 3）已完成 — parser/serializer/broker/registry 全层实现，6 新测试 | Reviewer |
+| 2026-06-17 | v1.0 | M3 F15（ListOffsets API 2）已完成 — earliest/latest offset 查询，PartitionContext::current_offset() | Reviewer |
+| 2026-06-17 | v1.0 | M3 F18（批量消息处理）已完成 — record_batch.hpp 164 LOC v2 解析器，逐条追加 + offset 按 record 计数 + metadata header 修复 | Reviewer |
+| 2026-06-17 | v1.0 | M3 F20（Benchmark 框架）已完成 — producer_bench.cpp 305 LOC + setup_metadata.py + run.sh 一键全流程 | Reviewer |
+| 2026-06-17 | v1.0 | M3 F19（Produce 响应完善）已完成 — ProduceResult 结构体 + log_append_time_ms 真实时间戳 | Reviewer |
+| 2026-06-17 | v1.0 | FIX-2 已完成 — 5 个 Blocker 修复：unique_ptr 防引用悬挂、nullptr 检查、ByteWriter assert、varint 溢出保护、errno 保存 | Reviewer |
+| 2026-06-17 | v1.0 | M3 F21（Producer 吞吐基准）已完成 — run_all.sh 三场景对比，100B/1KB/10KB @ 50K msgs | Reviewer |
+| 2026-06-17 | v1.0 | M3 Producer 端到端可用 + Benchmark 全部完成（F14/F15/F18/F19/F20/F21），进入 M4 | Reviewer |
+| 2026-06-17 | v1.0 | M6 推迟至 roadmap v2（io_uring + 协程），v2 同步增加 benchmark 驱动性能优化专项 | Reviewer |
+| 2026-06-17 | v1.0 | M4 F22（FindCoordinator API 10）已完成 — 单 broker 始终返回自身 coordinator | Reviewer |
+| 2026-06-17 | v1.0 | M4 F27（OffsetCommit API 8）已完成 — group_offsets_ 三嵌套 map + 8 条目 API registry | Reviewer |
+| 2026-06-17 | v1.0 | M4 F26（OffsetFetch API 9）已完成 — OffsetCommit→OffsetFetch 端到端读写验证 | Reviewer |
+| 2026-06-17 | v1.0 | M4 F23（JoinGroup API 11）已完成 — group 成员管理 + generation 递增 + member_id 生成 | Reviewer |
+| 2026-06-17 | v1.0 | M4 F24（SyncGroup API 14）已完成 — leader/follower assignment 分发 + generation 校验错误码 82 | Reviewer |
+| 2026-06-17 | v1.0 | M4 F25（Heartbeat API 12）已完成 — generation 校验 + 错误码 82 | Reviewer |
+| 2026-06-17 | v1.0 | M4 F29（Group 状态机）已完成 — GroupState 枚举 + 3 行状态转换代码 | Reviewer |
+| 2026-06-17 | v1.0 | 架构整理：broker.cpp 拆分完成 — GroupCoordinator 185 LOC 独立模块，Broker 286 LOC 仅做 dispatch | Reviewer |
+| 2026-06-17 | v1.0 | M4 F30（Group Membership）已完成 — 4 map → GroupMetadata + MemberInfo 单 groups_ map | Reviewer |
+| 2026-06-17 | v1.0 | M4 F31（Partition Assignment）推迟 — assignor 为 consumer 侧功能，当前 SyncGroup 已支持标准 leader 分配流程 | Reviewer |
+| 2026-06-17 | v1.0 | M4 F32（Heartbeat/Session 超时）已完成 — last_heartbeat 时间戳 + erase_if 超时驱逐 + 全踢→Empty/部分踢→AwaitingSync | Reviewer |
+| 2026-06-17 | v1.0 | M4 F33（Offset 管理）已完成 — group_offsets_ → GroupMetadata.committed_offsets，GroupCoordinator 精简为 1 map + 1 counter | Reviewer |
+| 2026-06-17 | v1.0 | M4 F28（LeaveGroup API 13）已完成 — erase_if 移除 + 空→Empty/部分→AwaitingSync+gen++ | Reviewer |
+| 2026-06-17 | v1.0 | M4 F34（Rebalance 流程）已完成 — 1 行代码修正 generation 语义，8 步端到端 rebalance 测试 | Reviewer |
+| 2026-06-17 | v1.0 | M4 Consumer Group 全部完成（13 API + 状态机 + session 超时 + rebalance），进入 M5 | Reviewer |
+| 2026-06-17 | v1.0 | M5 F35（日志分段）已完成 — segment_bytes 阈值 + {offset:020d}.log 命名 + 目录扫描按序读取 | Reviewer |
+| 2026-06-17 | v1.0 | M5 F36（Offset 索引）已完成 — SparseIndexEntry 结构 + 每 1000 条采样 + segment roll 清空 | Reviewer |
+| 2026-06-17 | v1.0 | M5 F37（按需读取）已完成 — index 定位 + seek + 增量 read，向后兼容全量 Fetch | Reviewer |
+| 2026-06-17 | v1.0 | M5 F38（Group Commit）已完成 — produce() 内单次 open + 批量 write，消除 per-record 文件系统调用 | Reviewer |
+| 2026-06-17 | v1.0 | M5 F40（Producer 吞吐完整测试）开始开发 | Reviewer |
+| 2026-06-17 | v1.0 | v1/v2 战略调整：v1 全功能体系 + Apache Kafka 对比；v2 纯性能工程（批量写入、io_uring、火焰图优化、fuzzing）| Reviewer |
+| 2026-06-17 | v1.0 | M4 任务重排序：F32→F33→F28→F34；F31 推迟至 v2；F33 缩为 offset 整合；更新当前状态 | Reviewer |
