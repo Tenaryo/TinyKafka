@@ -14,7 +14,7 @@ mkdir -p "$RESULTS_DIR"
 
 echo "[bench] Building producer_bench..."
 cmake -B "$SCRIPT_DIR/build" -S "$SCRIPT_DIR" -G Ninja
-cmake --build "$SCRIPT_DIR/build" --target producer_bench
+cmake --build "$SCRIPT_DIR/build" --target producer_bench --target consumer_bench
 
 echo "[bench] Setting up metadata for topic '$TOPIC'..."
 METADATA_DIR="$LOGROOT/__cluster_metadata-0"

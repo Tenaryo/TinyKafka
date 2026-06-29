@@ -169,7 +169,7 @@ TinyKafka 已具备的基础能力：
 | F37 | 按需读取 | 替换当前全量读取为 Fetch 指定 offset 读取指定 max_bytes，配合 E2 实现 O(log segment) + O(1) 的读取路径 | P0 | 低风险 | F36 | ✅ 已完成 |
 | F38 | Group Commit 写入优化 | 批量落盘策略——收集一个时间窗口或大小窗口内的写请求，一次性 fsync，减少磁盘 I/O 次数 | P1 | 中风险 | F35 | ✅ 已完成 |
 | F39 | Fetch 增强 | 利用存储索引支持精确的 offset/max_bytes Fetch，支持 incremental fetch sessions（fetch session ID + epoch） | P1 | 低风险 | F37 |
-| F40 | Producer 吞吐完整测试 | 多 topic 多 partition、不同消息大小 (100B / 1KB / 10KB / 100KB)、不同 producer 并发数下的吞吐曲线 | P0 | 低风险 | F38 |
+| F40 | Producer 吞吐完整测试 | 多 topic 多 partition、不同消息大小 (100B / 1KB / 10KB / 100KB)、不同 producer 并发数下的吞吐曲线 | P0 | 低风险 | F38 | ✅ 已完成 |
 | F41 | Consumer 吞吐完整测试 | 多 consumer group、不同 partition 分配方案下的端到端吞吐 | P0 | 低风险 | F39 |
 | F42 | 延迟完整测试 | Produce 到 Consume 的端到端延迟分布（P50 / P99 / P999），不同吞吐量级下的延迟曲线 | P0 | 低风险 | F40, F41 |
 | F43 | Apache Kafka 同 workload 对比 | 同机器、同 workload、同客户端（librdkafka）对比 TinyKafka vs Apache Kafka 的吞吐和延迟 | P0 | 低风险 | F42 |
@@ -288,6 +288,7 @@ TinyKafka 已具备的基础能力：
 | 2026-06-17 | v1.0 | M5 F36（Offset 索引）已完成 — SparseIndexEntry 结构 + 每 1000 条采样 + segment roll 清空 | Reviewer |
 | 2026-06-17 | v1.0 | M5 F37（按需读取）已完成 — index 定位 + seek + 增量 read，向后兼容全量 Fetch | Reviewer |
 | 2026-06-17 | v1.0 | M5 F38（Group Commit）已完成 — produce() 内单次 open + 批量 write，消除 per-record 文件系统调用 | Reviewer |
-| 2026-06-17 | v1.0 | M5 F40（Producer 吞吐完整测试）开始开发 | Reviewer |
+| 2026-06-17 | v1.0 | M5 F40（Producer 吞吐完整测试）已完成 — 4 种消息大小 + 100KB 新场景，901 MB/s 吞吐 | Reviewer |
+| 2026-06-17 | v1.0 | M5 F41（Consumer 吞吐完整测试）开始开发 | Reviewer |
 | 2026-06-17 | v1.0 | v1/v2 战略调整：v1 全功能体系 + Apache Kafka 对比；v2 纯性能工程（批量写入、io_uring、火焰图优化、fuzzing）| Reviewer |
 | 2026-06-17 | v1.0 | M4 任务重排序：F32→F33→F28→F34；F31 推迟至 v2；F33 缩为 offset 整合；更新当前状态 | Reviewer |
