@@ -116,12 +116,23 @@ class PartitionContext {
         }
 
         size_t start_position = best ? best->file_position : 0;
+        int64_t entry_offset = best ? best->offset : 0;
         int64_t segment_base = best ? current_segment_base_offset_ : 0;
 
         auto path =
             std::format("{}/{}-{}/{:020d}.log", log_root_, topic_name_, partition_, segment_base);
-        std::ifstream file(path, std::ios::binary);
+        std::ifstream file(path, std::ios::binary | std::ios::ate);
         if (!file.is_open()) {
+            return {};
+        }
+
+        auto file_size = file.tellg();
+        if (file_size <= 0) {
+            return {};
+        }
+
+        size_t read_size = static_cast<size_t>(file_size) - start_position;
+        if (read_size == 0) {
             return {};
         }
 
@@ -130,10 +141,35 @@ class PartitionContext {
             return {};
         }
 
-        std::vector<uint8_t> result(static_cast<size_t>(max_bytes));
-        file.read(reinterpret_cast<char*>(result.data()), max_bytes);
-        auto read_bytes = file.gcount();
-        result.resize(static_cast<size_t>(read_bytes));
+        std::vector<uint8_t> raw_data(read_size);
+        file.read(reinterpret_cast<char*>(raw_data.data()),
+                  static_cast<std::streamsize>(read_size));
+        auto read_bytes = static_cast<size_t>(file.gcount());
+        raw_data.resize(read_bytes);
+
+        auto records = util::parse_record_batch(raw_data);
+        if (!records || records->empty()) {
+            if (raw_data.size() > static_cast<size_t>(max_bytes)) {
+                raw_data.resize(static_cast<size_t>(max_bytes));
+            }
+            return raw_data;
+        }
+
+        int64_t skip_count = offset - entry_offset;
+        std::vector<uint8_t> result;
+        for (size_t i = 0; i < records->size(); ++i) {
+            if (static_cast<int64_t>(i) < skip_count) {
+                continue;
+            }
+            result.insert(result.end(), (*records)[i].begin(), (*records)[i].end());
+            if (result.size() >= static_cast<size_t>(max_bytes)) {
+                break;
+            }
+        }
+
+        if (result.size() > static_cast<size_t>(max_bytes)) {
+            result.resize(static_cast<size_t>(max_bytes));
+        }
         return result;
     }
 

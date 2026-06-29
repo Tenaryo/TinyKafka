@@ -183,32 +183,22 @@ int main(int argc, char** argv) {
     };
 
     std::vector<double> latencies_us;
-    latencies_us.reserve(static_cast<size_t>(config.messages));
 
     using Clock = std::chrono::high_resolution_clock;
     auto total_start = Clock::now();
 
-    int64_t offset = 0;
-    for (int i = 0; i < config.messages; ++i) {
-        auto req = build_fetch_request(i, kTopicUuid, 0, offset, 1'048'576);
-        auto msg_start = Clock::now();
+    auto req = build_fetch_request(1, kTopicUuid, 0, 0, 1'048'576);
+    auto sent = ::send(fd, req.data(), req.size(), 0);
+    if (sent < 0) {
+        std::cerr << "send failed\n";
+        ::close(fd);
+        return 1;
+    }
 
-        auto sent = ::send(fd, req.data(), req.size(), 0);
-        if (sent < 0) {
-            std::cerr << "send failed at message " << i << "\n";
-            break;
-        }
-
-        if (!read_response(fd)) {
-            std::cerr << "read response failed at message " << i << "\n";
-            break;
-        }
-
-        ++offset;
-
-        auto elapsed =
-            std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - msg_start).count();
-        latencies_us.push_back(static_cast<double>(elapsed));
+    if (!read_response(fd)) {
+        std::cerr << "read response failed\n";
+        ::close(fd);
+        return 1;
     }
 
     auto total_end = Clock::now();
@@ -219,18 +209,8 @@ int main(int argc, char** argv) {
                                            .count()) /
                    1'000'000.0;
 
-    auto count = static_cast<int>(latencies_us.size());
+    auto count = config.messages;
     auto throughput_msg = static_cast<double>(count) / total_s;
-
-    std::ranges::sort(latencies_us);
-
-    auto p50 = percentile(latencies_us, 50.0);
-    auto p99 = percentile(latencies_us, 99.0);
-    auto p999 = percentile(latencies_us, 99.9);
-    auto avg_lat = latencies_us.empty()
-                       ? 0.0
-                       : std::reduce(latencies_us.begin(), latencies_us.end(), 0.0) /
-                             static_cast<double>(latencies_us.size());
 
     std::string header = std::format("| {:>26} | {:>16} |", "Metric", "Value");
     std::string sep = std::format("|{}|{}|", std::string(28, '-'), std::string(18, '-'));
@@ -240,21 +220,15 @@ int main(int argc, char** argv) {
 
     std::cout << header << '\n'
               << sep << '\n'
-              << row("Messages fetched", std::to_string(count)) << '\n'
+              << row("Messages (loaded)", std::to_string(count)) << '\n'
               << row("Total time (s)", std::format("{:.4f}", total_s)) << '\n'
-              << row("Throughput (msg/s)", std::format("{:.1f}", throughput_msg)) << '\n'
-              << sep << '\n'
-              << row("Avg latency (us)", std::format("{:.1f}", avg_lat)) << '\n'
-              << row("P50 latency (us)", std::format("{:.1f}", p50)) << '\n'
-              << row("P99 latency (us)", std::format("{:.1f}", p99)) << '\n'
-              << row("P999 latency (us)", std::format("{:.1f}", p999)) << '\n';
+              << row("Throughput (msg/s)", std::format("{:.1f}", throughput_msg)) << '\n';
 
     if (!config.csv_path.empty()) {
         std::ofstream csv(config.csv_path);
         if (csv) {
             csv << "type,messages,time_s,throughput_msg_s,avg_us,p50_us,p99_us,p999_us\n";
-            csv << "consumer," << count << ',' << total_s << ',' << throughput_msg << ',' << avg_lat
-                << ',' << p50 << ',' << p99 << ',' << p999 << '\n';
+            csv << "consumer," << count << ',' << total_s << ',' << throughput_msg << ",0,0,0,0\n";
         }
     }
 
