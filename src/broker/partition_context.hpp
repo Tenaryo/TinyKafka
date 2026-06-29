@@ -45,7 +45,7 @@ class PartitionContext {
             return {};
         }
 
-        int32_t record_count = static_cast<int32_t>(values->size());
+        auto record_count = static_cast<int32_t>(values->size());
 
         auto now = std::chrono::system_clock::now();
         auto append_time =
