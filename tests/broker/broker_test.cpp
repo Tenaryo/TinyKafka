@@ -1983,3 +1983,58 @@ TEST(BrokerTest, FetchWithOffsetReturnsSubset) {
 
     std::filesystem::remove_all(tmp_dir);
 }
+
+TEST(BrokerTest, GroupCommitWritesMultipleRecordsSingleBatch) {
+    constexpr TopicId topic_uuid = {
+        0xa1,
+        0xb2,
+        0xc3,
+        0xd4,
+        0xe5,
+        0xf6,
+        0xa7,
+        0xb8,
+        0xc9,
+        0xd0,
+        0xe1,
+        0xf2,
+        0xa3,
+        0xb4,
+        0xc5,
+        0xd6,
+    };
+
+    auto tmp_dir = make_tmp_log_dir();
+    auto meta = make_meta_with_topic("orders", topic_uuid, {0});
+
+    auto batch = make_record_batch_v2({{0x01, 0x02}, {0x03}, {0x04, 0x05, 0x06}});
+
+    RequestHeader header{0, 11, 999};
+    ProduceRequest req{
+        header,
+        {{.topic_name = "orders", .partitions = {{.partition_index = 0, .records = batch}}}}};
+
+    auto resp = Broker(std::move(meta), tmp_dir).handle(req);
+    auto r = std::get_if<ProduceResponse>(&resp);
+    ASSERT_NE(r, nullptr);
+    EXPECT_EQ(r->correlation_id, 999);
+    ASSERT_EQ(r->responses.size(), 1u);
+    EXPECT_EQ(r->responses[0].topic_name, "orders");
+    ASSERT_EQ(r->responses[0].partitions.size(), 1u);
+    EXPECT_EQ(r->responses[0].partitions[0].partition_index, 0);
+    EXPECT_EQ(r->responses[0].partitions[0].error_code, 0);
+    EXPECT_EQ(r->responses[0].partitions[0].base_offset, 0);
+
+    auto log_path = tmp_dir + "/orders-0/00000000000000000000.log";
+    EXPECT_TRUE(std::filesystem::exists(log_path));
+    std::ifstream f(log_path, std::ios::binary | std::ios::ate);
+    ASSERT_TRUE(f.is_open());
+    auto sz = f.tellg();
+    ASSERT_EQ(static_cast<size_t>(sz), 6u);
+    f.seekg(0);
+    std::vector<uint8_t> readback(static_cast<size_t>(sz));
+    f.read(reinterpret_cast<char*>(readback.data()), sz);
+    EXPECT_EQ(readback, (std::vector<uint8_t>{0x01, 0x02, 0x03, 0x04, 0x05, 0x06}));
+
+    std::filesystem::remove_all(tmp_dir);
+}

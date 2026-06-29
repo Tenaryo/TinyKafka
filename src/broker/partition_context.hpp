@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "storage/log_reader.hpp"
-#include "storage/log_writer.hpp"
 #include "util/record_batch.hpp"
 
 namespace broker {
@@ -50,12 +49,32 @@ class PartitionContext {
         auto append_time =
             std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
 
+        auto dir = std::format("{}/{}-{}", log_root_, topic_name_, partition_);
+        std::error_code dir_ec;
+        std::filesystem::create_directories(dir, dir_ec);
+        if (dir_ec) {
+            return {};
+        }
+
+        auto path = std::format("{}/{:020d}.log", dir, current_segment_base_offset_);
+        std::ofstream file(path, std::ios::binary | std::ios::app);
+        if (!file) {
+            return {};
+        }
+
         auto base_offset = next_offset_;
         for (const auto& value : *values) {
             if (segment_bytes_ > 0 && current_segment_bytes_ + value.size() > segment_bytes_) {
+                file.close();
                 current_segment_base_offset_ = next_offset_;
                 current_segment_bytes_ = 0;
                 current_segment_index_.clear();
+                path = std::format("{}/{:020d}.log", dir, current_segment_base_offset_);
+                file.open(path, std::ios::binary | std::ios::app);
+                if (!file) {
+                    next_offset_ = base_offset;
+                    return {};
+                }
             }
 
             if (next_offset_ % kSparseIndexInterval == 0) {
@@ -63,9 +82,9 @@ class PartitionContext {
                     {.offset = next_offset_, .file_position = current_segment_bytes_});
             }
 
-            auto ec = storage::write_topic_log(
-                log_root_, topic_name_, partition_, current_segment_base_offset_, value);
-            if (ec) {
+            file.write(reinterpret_cast<const char*>(value.data()),
+                       static_cast<std::streamsize>(value.size()));
+            if (!file) {
                 next_offset_ = base_offset;
                 return {};
             }
