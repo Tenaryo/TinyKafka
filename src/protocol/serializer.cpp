@@ -204,6 +204,8 @@ auto serialize(const Response& resp) -> std::vector<std::uint8_t> {
                         body_size += compact_int32_array_size(p.replica_nodes);
                         body_size += compact_int32_array_size(p.isr_nodes);
                         body_size += compact_int32_array_size(p.offline_replicas);
+                        body_size += compact_int32_array_size(p.eligible_leader_replicas);
+                        body_size += compact_int32_array_size(p.last_known_elr);
                         body_size += 1;
                     }
                     body_size += 1;
@@ -258,6 +260,8 @@ auto serialize(const Response& resp) -> std::vector<std::uint8_t> {
                         write_compact_int32_array(writer, p.replica_nodes);
                         write_compact_int32_array(writer, p.isr_nodes);
                         write_compact_int32_array(writer, p.offline_replicas);
+                        write_compact_int32_array(writer, p.eligible_leader_replicas);
+                        write_compact_int32_array(writer, p.last_known_elr);
                         writer.write_int8(0x00);
                     }
                     writer.write_int32(t.topic_authorized_operations);
@@ -305,7 +309,11 @@ auto serialize(const Response& resp) -> std::vector<std::uint8_t> {
                     body_size += varint_encoded_size(name_varint) + t.topic_name.size();
                     body_size +=
                         varint_encoded_size(static_cast<uint32_t>(t.partitions.size()) + 1);
-                    body_size += t.partitions.size() * (4 + 2 + 1);
+                    for (const auto& p : t.partitions) {
+                        uint32_t md_varint = static_cast<uint32_t>(p.committed_metadata.size()) + 1;
+                        body_size += 4 + 2 + 4 + varint_encoded_size(md_varint) +
+                                     p.committed_metadata.size() + 1;
+                    }
                     body_size += 1;
                 }
                 body_size += 1;
@@ -325,6 +333,12 @@ auto serialize(const Response& resp) -> std::vector<std::uint8_t> {
                     for (const auto& p : t.partitions) {
                         writer.write_int32(p.partition_index);
                         writer.write_int16(p.error_code);
+                        writer.write_int32(p.committed_leader_epoch);
+                        if (p.committed_metadata.empty()) {
+                            writer.write_varint(0);
+                        } else {
+                            writer.write_compact_string(p.committed_metadata);
+                        }
                         writer.write_int8(0x00);
                     }
                     writer.write_int8(0x00);
@@ -341,7 +355,11 @@ auto serialize(const Response& resp) -> std::vector<std::uint8_t> {
                     body_size += varint_encoded_size(name_varint) + t.topic_name.size();
                     body_size +=
                         varint_encoded_size(static_cast<uint32_t>(t.partitions.size()) + 1);
-                    body_size += t.partitions.size() * (4 + 8 + 2 + 1);
+                    for (const auto& p : t.partitions) {
+                        uint32_t md_varint = static_cast<uint32_t>(p.committed_metadata.size()) + 1;
+                        body_size += 4 + 8 + 4 + varint_encoded_size(md_varint) +
+                                     p.committed_metadata.size() + 2 + 1;
+                    }
                     body_size += 1;
                 }
                 body_size += 1;
@@ -361,6 +379,12 @@ auto serialize(const Response& resp) -> std::vector<std::uint8_t> {
                     for (const auto& p : t.partitions) {
                         writer.write_int32(p.partition_index);
                         writer.write_int64(p.committed_offset);
+                        writer.write_int32(p.committed_leader_epoch);
+                        if (p.committed_metadata.empty()) {
+                            writer.write_varint(0);
+                        } else {
+                            writer.write_compact_string(p.committed_metadata);
+                        }
                         writer.write_int16(p.error_code);
                         writer.write_int8(0x00);
                     }

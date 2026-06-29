@@ -219,7 +219,9 @@ auto GroupCoordinator::handle_offset_commit(const OffsetCommitRequest& r) -> Off
         for (const auto& part_req : topic_req.partitions) {
             meta.committed_offsets[topic_req.topic_name][part_req.partition_index] =
                 part_req.committed_offset;
-            parts.push_back({.partition_index = part_req.partition_index, .error_code = 0});
+            parts.push_back({.partition_index = part_req.partition_index,
+                             .error_code = 0,
+                             .committed_metadata = {}});
         }
         topic_responses.push_back(
             {.topic_name = topic_req.topic_name, .partitions = std::move(parts)});
@@ -251,8 +253,10 @@ auto GroupCoordinator::handle_offset_fetch(const OffsetFetchRequest& r) -> Offse
                     offset = part_it->second;
                 }
             }
-            parts.push_back(
-                {.partition_index = partition_idx, .committed_offset = offset, .error_code = 0});
+            parts.push_back({.partition_index = partition_idx,
+                             .committed_offset = offset,
+                             .committed_metadata = {},
+                             .error_code = 0});
         }
         topic_responses.push_back(
             {.topic_name = topic_req.topic_name, .partitions = std::move(parts)});

@@ -141,6 +141,8 @@ struct FindCoordinatorResponse {
 struct OffsetCommitPartitionResponse {
     int32_t partition_index = 0;
     int16_t error_code = 0;
+    int32_t committed_leader_epoch = -1;
+    std::string committed_metadata;
 };
 
 struct OffsetCommitTopicResponse {
@@ -157,6 +159,8 @@ struct OffsetCommitResponse {
 struct OffsetFetchPartitionResponse {
     int32_t partition_index = 0;
     int64_t committed_offset = -1;
+    int32_t committed_leader_epoch = -1;
+    std::string committed_metadata;
     int16_t error_code = 0;
 };
 
