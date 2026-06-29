@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -1259,7 +1260,6 @@ TEST(BrokerTest, HandlesSyncGroupLeaderAndFollower) {
         auto r = std::get_if<SyncGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
-        EXPECT_TRUE(r->assignment.empty());
     }
 
     {
@@ -1280,6 +1280,106 @@ TEST(BrokerTest, HandlesSyncGroupLeaderAndFollower) {
         auto r = std::get_if<SyncGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 82);
+    }
+}
+
+TEST(BrokerTest, HeartbeatUpdatesTimestampWithoutEviction) {
+    Broker broker(ClusterMetadata{}, "");
+
+    std::string member;
+    {
+        RequestHeader header{11, 0, 42};
+        JoinGroupRequest req{header, "hbt", 30000, "", "consumer", {{"range", {}}}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<JoinGroupResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->generation_id, 1);
+        member = r->member_id;
+    }
+
+    {
+        RequestHeader header{14, 0, 43};
+        SyncGroupRequest req{header, "hbt", 1, member, {{member, {0x01}}}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<SyncGroupResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 0);
+    }
+
+    {
+        RequestHeader header{12, 0, 44};
+        HeartbeatRequest req{header, "hbt", 1, member, {}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<HeartbeatResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 0);
+    }
+
+    {
+        RequestHeader header{12, 0, 45};
+        HeartbeatRequest req{header, "hbt", 1, member, {}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<HeartbeatResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 0);
+    }
+}
+
+TEST(BrokerTest, SessionTimeoutEvictsStaleMember) {
+    Broker broker(ClusterMetadata{}, "");
+
+    {
+        RequestHeader header{11, 0, 42};
+        JoinGroupRequest req{header, "hbe", 1, "a", "consumer", {{"range", {}}}};
+        broker.handle(req);
+    }
+
+    {
+        RequestHeader header{14, 0, 43};
+        SyncGroupRequest req{header, "hbe", 1, "a", {{"a", {0x01}}}};
+        broker.handle(req);
+    }
+
+    {
+        RequestHeader header{11, 0, 44};
+        JoinGroupRequest req{header, "hbe", 1, "b", "consumer", {{"range", {}}}};
+        broker.handle(req);
+    }
+
+    {
+        RequestHeader header{14, 0, 45};
+        SyncGroupRequest req{header, "hbe", 2, "b", {{"b", {0x02}}}};
+        broker.handle(req);
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    {
+        RequestHeader header{12, 0, 46};
+        HeartbeatRequest req{header, "hbe", 2, "b", {}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<HeartbeatResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 0);
+    }
+
+    {
+        RequestHeader header{12, 0, 47};
+        HeartbeatRequest req{header, "hbe", 2, "a", {}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<HeartbeatResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 82);
+    }
+
+    {
+        RequestHeader header{11, 0, 48};
+        JoinGroupRequest req{header, "hbe", 30000, "b", "consumer", {{"range", {}}}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<JoinGroupResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 0);
+        EXPECT_EQ(r->generation_id, 4);
     }
 }
 

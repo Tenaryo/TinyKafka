@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <mutex>
 #include <string>
@@ -20,11 +21,13 @@ struct MemberInfo {
     std::string member_id;
     std::vector<uint8_t> protocol_metadata;
     std::vector<uint8_t> assignment;
+    std::chrono::steady_clock::time_point last_heartbeat;
 };
 
 struct GroupMetadata {
     GroupState state = GroupState::Empty;
     int32_t generation = 0;
+    int32_t session_timeout_ms = 30000;
     std::vector<MemberInfo> members;
 };
 

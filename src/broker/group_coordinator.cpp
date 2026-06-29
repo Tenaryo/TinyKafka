@@ -34,9 +34,20 @@ auto GroupCoordinator::handle_join_group(const JoinGroupRequest& r) -> JoinGroup
         if (!r.protocols.empty()) {
             metadata = r.protocols[0].metadata;
         }
-        meta.members.push_back(
-            {.member_id = member, .protocol_metadata = std::move(metadata), .assignment = {}});
+        meta.members.push_back({.member_id = member,
+                                .protocol_metadata = std::move(metadata),
+                                .assignment = {},
+                                .last_heartbeat = std::chrono::steady_clock::now()});
+    } else {
+        for (auto& m : meta.members) {
+            if (m.member_id == member) {
+                m.last_heartbeat = std::chrono::steady_clock::now();
+                break;
+            }
+        }
     }
+
+    meta.session_timeout_ms = r.session_timeout_ms;
 
     if (meta.generation == 0) {
         meta.generation = 1;
@@ -93,7 +104,8 @@ auto GroupCoordinator::handle_sync_group(const SyncGroupRequest& r) -> SyncGroup
             if (!updated) {
                 meta.members.push_back({.member_id = a.member_id,
                                         .protocol_metadata = {},
-                                        .assignment = a.assignment});
+                                        .assignment = a.assignment,
+                                        .last_heartbeat = std::chrono::steady_clock::now()});
             }
         }
         meta.state = GroupState::Stable;
@@ -134,6 +146,30 @@ auto GroupCoordinator::handle_heartbeat(const HeartbeatRequest& r) -> HeartbeatR
 
     if (error_code == 0 && (it == groups_.end() || it->second.state != GroupState::Stable)) {
         error_code = 82;
+    }
+
+    if (error_code == 0) {
+        auto now = std::chrono::steady_clock::now();
+        auto& meta = it->second;
+
+        for (auto& m : meta.members) {
+            if (m.member_id == r.member_id) {
+                m.last_heartbeat = now;
+                break;
+            }
+        }
+
+        auto timeout = std::chrono::milliseconds(meta.session_timeout_ms);
+        auto old_size = meta.members.size();
+        std::erase_if(meta.members,
+                      [now, timeout](const auto& m) { return now - m.last_heartbeat > timeout; });
+
+        if (meta.members.empty()) {
+            meta.state = GroupState::Empty;
+        } else if (meta.members.size() < old_size) {
+            meta.state = GroupState::AwaitingSync;
+            ++meta.generation;
+        }
     }
 
     return HeartbeatResponse{
