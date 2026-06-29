@@ -182,6 +182,7 @@ auto GroupCoordinator::handle_heartbeat(const HeartbeatRequest& r) -> HeartbeatR
 auto GroupCoordinator::handle_offset_commit(const OffsetCommitRequest& r) -> OffsetCommitResponse {
     std::lock_guard lock(mutex_);
 
+    auto& meta = groups_[r.group_id];
     std::vector<OffsetCommitTopicResponse> topic_responses;
     topic_responses.reserve(r.topics.size());
 
@@ -189,7 +190,7 @@ auto GroupCoordinator::handle_offset_commit(const OffsetCommitRequest& r) -> Off
         std::vector<OffsetCommitPartitionResponse> parts;
         parts.reserve(topic_req.partitions.size());
         for (const auto& part_req : topic_req.partitions) {
-            group_offsets_[r.group_id][topic_req.topic_name][part_req.partition_index] =
+            meta.committed_offsets[topic_req.topic_name][part_req.partition_index] =
                 part_req.committed_offset;
             parts.push_back({.partition_index = part_req.partition_index, .error_code = 0});
         }
@@ -207,6 +208,7 @@ auto GroupCoordinator::handle_offset_commit(const OffsetCommitRequest& r) -> Off
 auto GroupCoordinator::handle_offset_fetch(const OffsetFetchRequest& r) -> OffsetFetchResponse {
     std::lock_guard lock(mutex_);
 
+    auto& meta = groups_[r.group_id];
     std::vector<OffsetFetchTopicResponse> topic_responses;
     topic_responses.reserve(r.topics.size());
 
@@ -215,14 +217,11 @@ auto GroupCoordinator::handle_offset_fetch(const OffsetFetchRequest& r) -> Offse
         parts.reserve(topic_req.partition_indexes.size());
         for (auto partition_idx : topic_req.partition_indexes) {
             int64_t offset = -1;
-            auto group_it = group_offsets_.find(r.group_id);
-            if (group_it != group_offsets_.end()) {
-                auto topic_it = group_it->second.find(topic_req.topic_name);
-                if (topic_it != group_it->second.end()) {
-                    auto part_it = topic_it->second.find(partition_idx);
-                    if (part_it != topic_it->second.end()) {
-                        offset = part_it->second;
-                    }
+            auto topic_it = meta.committed_offsets.find(topic_req.topic_name);
+            if (topic_it != meta.committed_offsets.end()) {
+                auto part_it = topic_it->second.find(partition_idx);
+                if (part_it != topic_it->second.end()) {
+                    offset = part_it->second;
                 }
             }
             parts.push_back(

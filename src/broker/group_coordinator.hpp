@@ -29,6 +29,7 @@ struct GroupMetadata {
     int32_t generation = 0;
     int32_t session_timeout_ms = 30000;
     std::vector<MemberInfo> members;
+    std::unordered_map<std::string, std::unordered_map<int32_t, int64_t>> committed_offsets;
 };
 
 class GroupCoordinator {
@@ -43,9 +44,6 @@ class GroupCoordinator {
     auto handle_offset_fetch(const OffsetFetchRequest& r) -> OffsetFetchResponse;
   private:
     std::mutex mutex_;
-    std::unordered_map<std::string,
-                       std::unordered_map<std::string, std::unordered_map<int32_t, int64_t>>>
-        group_offsets_;
     std::unordered_map<std::string, GroupMetadata> groups_;
     int32_t next_member_id_{0};
 };
