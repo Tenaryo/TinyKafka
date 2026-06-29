@@ -20,6 +20,15 @@
 #include <gtest/gtest.h>
 #include <netinet/in.h>
 
+#include "common/test_helpers.hpp"
+
+using test_helpers::make_unique_temp_dir;
+using test_helpers::push_be16;
+using test_helpers::push_be32;
+using test_helpers::push_be64;
+using test_helpers::push_signed_varint;
+using test_helpers::push_unsigned_varint;
+
 namespace {
 
 constexpr int kServerPort = 9092;
@@ -35,14 +44,6 @@ std::string find_server_binary() {
         throw std::runtime_error("Server binary not found at: " + server_path.string());
     }
     return server_path.string();
-}
-
-auto make_unique_temp_dir() -> std::string {
-    static std::atomic<int> counter{0};
-    auto path = std::filesystem::temp_directory_path() /
-                ("tinytk_int_" + std::to_string(getpid()) + "_" + std::to_string(++counter));
-    std::filesystem::create_directories(path);
-    return path.string();
 }
 
 int connect_to_server() {
@@ -165,41 +166,6 @@ class ServerProcess {
     pid_t pid_{};
     std::string log_root_;
 };
-
-void push_unsigned_varint(std::vector<uint8_t>& buf, uint32_t val) {
-    while (val > 0x7F) {
-        buf.push_back(static_cast<uint8_t>((val & 0x7F) | 0x80));
-        val >>= 7;
-    }
-    buf.push_back(static_cast<uint8_t>(val & 0x7F));
-}
-
-void push_signed_varint(std::vector<uint8_t>& buf, int32_t val) {
-    uint32_t encoded =
-        static_cast<uint32_t>((static_cast<uint32_t>(val) << 1) ^ static_cast<uint32_t>(val >> 31));
-    while (encoded > 0x7F) {
-        buf.push_back(static_cast<uint8_t>((encoded & 0x7F) | 0x80));
-        encoded >>= 7;
-    }
-    buf.push_back(static_cast<uint8_t>(encoded & 0x7F));
-}
-
-void push_be16(std::vector<uint8_t>& buf, int16_t v) {
-    buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
-    buf.push_back(static_cast<uint8_t>(v & 0xFF));
-}
-
-void push_be32(std::vector<uint8_t>& buf, int32_t v) {
-    buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
-    buf.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
-    buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
-    buf.push_back(static_cast<uint8_t>(v & 0xFF));
-}
-
-void push_be64(std::vector<uint8_t>& buf, int64_t v) {
-    for (int i = 7; i >= 0; --i)
-        buf.push_back(static_cast<uint8_t>((v >> (i * 8)) & 0xFF));
-}
 
 auto make_topic_record_value(std::string_view name,
                              const std::array<uint8_t, 16>& uuid) -> std::vector<uint8_t> {
