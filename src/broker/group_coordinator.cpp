@@ -51,7 +51,7 @@ auto GroupCoordinator::handle_join_group(const JoinGroupRequest& r) -> JoinGroup
 
     if (meta.generation == 0) {
         meta.generation = 1;
-    } else {
+    } else if (meta.state == GroupState::Stable) {
         ++meta.generation;
     }
 

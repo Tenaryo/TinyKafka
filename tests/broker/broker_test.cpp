@@ -1234,7 +1234,7 @@ TEST(BrokerTest, HandlesJoinGroupNewMember) {
         auto resp = broker.handle(req);
         auto r = std::get_if<JoinGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
-        EXPECT_EQ(r->generation_id, 2);
+        EXPECT_EQ(r->generation_id, 1); // state is still AwaitingSync, no increment
     }
 }
 
@@ -1379,7 +1379,7 @@ TEST(BrokerTest, SessionTimeoutEvictsStaleMember) {
         auto r = std::get_if<JoinGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
-        EXPECT_EQ(r->generation_id, 4);
+        EXPECT_EQ(r->generation_id, 3);
     }
 }
 
@@ -1639,7 +1639,7 @@ TEST(BrokerTest, LeaveGroupOneOfTwoMembersTransitionsToAwaitingSync) {
         auto resp = broker.handle(req);
         auto r = std::get_if<JoinGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
-        EXPECT_EQ(r->generation_id, 2);
+        EXPECT_EQ(r->generation_id, 1); // state is still AwaitingSync, no increment
         gen_b = r->generation_id;
         member_b = r->member_id;
     }
@@ -1660,5 +1660,88 @@ TEST(BrokerTest, LeaveGroupOneOfTwoMembersTransitionsToAwaitingSync) {
         auto r = std::get_if<HeartbeatResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 82);
+    }
+}
+
+TEST(BrokerTest, RebalanceKeepsGenerationStable) {
+    Broker broker(ClusterMetadata{}, "");
+
+    std::string member_a;
+    {
+        RequestHeader header{11, 0, 42};
+        JoinGroupRequest req{header, "rb", 30000, "a", "consumer", {{"range", {}}}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<JoinGroupResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 0);
+        EXPECT_EQ(r->generation_id, 1);
+        member_a = r->member_id;
+    }
+
+    {
+        RequestHeader header{14, 0, 43};
+        SyncGroupRequest req{header, "rb", 1, member_a, {{member_a, {0x01}}}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<SyncGroupResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 0);
+    }
+
+    std::string member_b;
+    {
+        RequestHeader header{11, 0, 44};
+        JoinGroupRequest req{header, "rb", 30000, "b", "consumer", {{"range", {}}}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<JoinGroupResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 0);
+        EXPECT_EQ(r->generation_id, 2); // Stable -> AwaitingSync increments generation
+        member_b = r->member_id;
+    }
+
+    {
+        RequestHeader header{14, 0, 45};
+        SyncGroupRequest req{header, "rb", 2, member_b, {{member_b, {0x02}}}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<SyncGroupResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 0);
+    }
+
+    {
+        RequestHeader header{12, 0, 46};
+        HeartbeatRequest req{header, "rb", 2, member_b, {}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<HeartbeatResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 0);
+    }
+
+    {
+        RequestHeader header{11, 0, 47};
+        JoinGroupRequest req{header, "rb", 30000, member_a, "consumer", {{"range", {}}}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<JoinGroupResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 0);
+        EXPECT_EQ(r->generation_id, 3); // rejoin from Stable triggers rebalance
+    }
+
+    {
+        RequestHeader header{14, 0, 48};
+        SyncGroupRequest req{header, "rb", 3, member_a, {{member_a, {0x01}}}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<SyncGroupResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 0);
+    }
+
+    {
+        RequestHeader header{12, 0, 49};
+        HeartbeatRequest req{header, "rb", 3, member_a, {}};
+        auto resp = broker.handle(req);
+        auto r = std::get_if<HeartbeatResponse>(&resp);
+        ASSERT_NE(r, nullptr);
+        EXPECT_EQ(r->error_code, 0);
     }
 }
