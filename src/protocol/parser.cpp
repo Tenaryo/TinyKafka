@@ -166,9 +166,9 @@ auto parse_request(std::span<const std::uint8_t> buf) -> std::expected<Request, 
                 if (!skip_leader_epoch) {
                     return std::unexpected(skip_leader_epoch.error());
                 }
-                auto skip_fetch_offset = reader.skip(8); // fetch_offset
-                if (!skip_fetch_offset) {
-                    return std::unexpected(skip_fetch_offset.error());
+                auto fetch_offset = reader.read_int64(); // fetch_offset
+                if (!fetch_offset) {
+                    return std::unexpected(fetch_offset.error());
                 }
                 auto skip_last_epoch = reader.skip(4); // last_fetched_epoch
                 if (!skip_last_epoch) {
@@ -178,15 +178,17 @@ auto parse_request(std::span<const std::uint8_t> buf) -> std::expected<Request, 
                 if (!skip_log_start) {
                     return std::unexpected(skip_log_start.error());
                 }
-                auto skip_max_bytes = reader.skip(4); // max_bytes
-                if (!skip_max_bytes) {
-                    return std::unexpected(skip_max_bytes.error());
+                auto part_max_bytes = reader.read_int32(); // max_bytes
+                if (!max_bytes) {
+                    return std::unexpected(max_bytes.error());
                 }
                 auto skip_part_tag = reader.skip(1); // TAG_BUFFER
                 if (!skip_part_tag) {
                     return std::unexpected(skip_part_tag.error());
                 }
-                parts.push_back({.partition_index = *part_idx});
+                parts.push_back({.partition_index = *part_idx,
+                                 .fetch_offset = *fetch_offset,
+                                 .max_bytes = *part_max_bytes});
             }
 
             auto skip_topic_tag = reader.skip(1); // TAG_BUFFER

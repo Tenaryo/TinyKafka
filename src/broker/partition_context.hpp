@@ -2,6 +2,9 @@
 
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
+#include <format>
+#include <fstream>
 #include <mutex>
 #include <span>
 #include <string>
@@ -75,6 +78,44 @@ class PartitionContext {
     [[nodiscard]] auto fetch() -> std::vector<uint8_t> {
         std::lock_guard lock(mutex_);
         return storage::read_topic_log(log_root_, topic_name_, partition_);
+    }
+
+    [[nodiscard]] auto fetch(int64_t offset, int32_t max_bytes) -> std::vector<uint8_t> {
+        std::lock_guard lock(mutex_);
+
+        if (max_bytes <= 0) {
+            return {};
+        }
+
+        const SparseIndexEntry* best = nullptr;
+        for (const auto& entry : current_segment_index_) {
+            if (entry.offset <= offset) {
+                best = &entry;
+            } else {
+                break;
+            }
+        }
+
+        size_t start_position = best ? best->file_position : 0;
+        int64_t segment_base = best ? current_segment_base_offset_ : 0;
+
+        auto path =
+            std::format("{}/{}-{}/{:020d}.log", log_root_, topic_name_, partition_, segment_base);
+        std::ifstream file(path, std::ios::binary);
+        if (!file.is_open()) {
+            return {};
+        }
+
+        file.seekg(static_cast<std::streamoff>(start_position), std::ios::beg);
+        if (!file) {
+            return {};
+        }
+
+        std::vector<uint8_t> result(static_cast<size_t>(max_bytes));
+        file.read(reinterpret_cast<char*>(result.data()), max_bytes);
+        auto read_bytes = file.gcount();
+        result.resize(static_cast<size_t>(read_bytes));
+        return result;
     }
 
     [[nodiscard]] auto current_offset() const -> int64_t {

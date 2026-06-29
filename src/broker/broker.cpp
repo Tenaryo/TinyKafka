@@ -258,9 +258,15 @@ auto Broker::handle(const Request& req) -> Response {
                         parts.reserve(topic_req.partitions.size());
                         for (const auto& part_req : topic_req.partitions) {
                             auto& ctx = get_or_create_context(info->name, part_req.partition_index);
+                            std::vector<uint8_t> records;
+                            if (part_req.fetch_offset > 0 || part_req.max_bytes > 0) {
+                                records = ctx.fetch(part_req.fetch_offset, part_req.max_bytes);
+                            } else {
+                                records = ctx.fetch();
+                            }
                             parts.push_back({.partition_index = part_req.partition_index,
                                              .error_code = 0,
-                                             .records = ctx.fetch()});
+                                             .records = std::move(records)});
                         }
                         topic_responses.push_back(
                             {.topic_id = topic_req.topic_id, .partitions = std::move(parts)});

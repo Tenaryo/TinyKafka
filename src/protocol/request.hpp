@@ -23,6 +23,8 @@ struct DescribeTopicPartitionsRequest {
 
 struct FetchPartitionRequest {
     int32_t partition_index = 0;
+    int64_t fetch_offset = 0;
+    int32_t max_bytes = 0;
 };
 
 struct FetchTopicRequest {
