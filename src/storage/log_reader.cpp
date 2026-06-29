@@ -20,17 +20,9 @@ auto read_topic_log(std::string_view root_path,
         if (!entry.is_regular_file()) {
             continue;
         }
-        auto stem = entry.path().stem().string();
-        if (!stem.ends_with(".log")) {
-            auto name = entry.path().filename().string();
-            if (name.size() < 24 || !name.ends_with(".log")) {
-                continue;
-            }
-            stem = name.substr(0, 20);
-        }
-        if (stem.size() == 20) {
-            int64_t base = std::stoll(stem);
-            segments[base] = entry.path();
+        auto name = entry.path().filename().string();
+        if (name.size() == 24 && name.ends_with(".log")) {
+            segments[std::stoll(name.substr(0, 20))] = entry.path();
         }
     }
 
