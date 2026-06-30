@@ -28,6 +28,7 @@ target_compile_options(TinyKafka_core PRIVATE
     $<$<CONFIG:Debug>:-g -O0>
     $<$<CONFIG:Release>:-O3>
 )
+target_link_libraries(TinyKafka_core PUBLIC uring)
 
 add_executable(kafka src/main.cpp)
 target_link_libraries(kafka PRIVATE TinyKafka_core)

@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdint>
 #include <deque>
+#include <liburing.h>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -59,6 +60,7 @@ class EpollReactor {
     broker::BrokerMetrics metrics_;
     std::chrono::steady_clock::time_point last_metrics_log_;
     std::unordered_map<int, Connection> connections_;
+    io_uring ring_;
 };
 
 } // namespace net
