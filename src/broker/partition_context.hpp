@@ -204,12 +204,24 @@ class PartitionContext {
         size_t length = 0;
     };
 
-    [[nodiscard]] auto splice_info([[maybe_unused]] int64_t fetch_offset, int32_t max_bytes) -> SpliceInfo {
+    [[nodiscard]] auto splice_info(int64_t fetch_offset, int32_t max_bytes) -> SpliceInfo {
         std::lock_guard lock(mutex_);
         auto fd = file_.is_open() ? file_fd() : -1;
         if (fd < 0) return {};
-        size_t offset = current_segment_bytes_;
-        return {fd, offset, static_cast<size_t>(max_bytes)};
+
+        const SparseIndexEntry* best = nullptr;
+        for (const auto& entry : current_segment_index_) {
+            if (entry.offset <= fetch_offset) {
+                best = &entry;
+            } else {
+                break;
+            }
+        }
+        size_t offset = best ? best->file_position : 0;
+        size_t available = current_segment_bytes_ - offset;
+        if (available < 65536) return {};
+        size_t len = std::min(available, static_cast<size_t>(max_bytes));
+        return {fd, offset, len};
     }
 
     [[nodiscard]] auto file_position() const -> size_t {

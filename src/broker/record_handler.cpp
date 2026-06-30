@@ -105,28 +105,19 @@ auto RecordHandler::handle_fetch(const FetchRequest& r) -> FetchResponse {
                 int splice_fd = -1;
                 size_t splice_offset = 0;
                 size_t splice_len = 0;
-                if (part_req.fetch_offset > 0 || part_req.max_bytes > 0) {
+
+                auto offset = part_req.fetch_offset > 0 ? part_req.fetch_offset : 0;
+                auto mb = part_req.max_bytes > 0 ? part_req.max_bytes : 1'048'576;
+
+                auto si = ctx.splice_info(offset, mb);
+                if (si.fd >= 0) {
+                    splice_fd = si.fd;
+                    splice_offset = si.file_offset;
+                    splice_len = si.length;
+                } else if (part_req.fetch_offset > 0 || part_req.max_bytes > 0) {
                     records = ctx.fetch(part_req.fetch_offset, part_req.max_bytes);
-                    if (records.size() > 65536) {
-                        auto si = ctx.splice_info(part_req.fetch_offset, part_req.max_bytes);
-                        if (si.fd >= 0) {
-                            splice_fd = si.fd;
-                            splice_offset = si.file_offset;
-                            splice_len = si.length;
-                            records.clear();
-                        }
-                    }
                 } else {
                     records = ctx.fetch();
-                    if (records.size() > 65536) {
-                        auto si = ctx.splice_info(0, 1'048'576);
-                        if (si.fd >= 0) {
-                            splice_fd = si.fd;
-                            splice_offset = si.file_offset;
-                            splice_len = si.length;
-                            records.clear();
-                        }
-                    }
                 }
                 parts.push_back({.partition_index = part_req.partition_index,
                                  .error_code = 0,
