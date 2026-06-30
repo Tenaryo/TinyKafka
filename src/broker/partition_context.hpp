@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <coroutine>
 #include <cstdint>
 #include <fcntl.h>
 #include <filesystem>
@@ -12,6 +13,8 @@
 #include <utility>
 #include <vector>
 
+#include "net/io_awaiter.hpp"
+#include "net/task.hpp"
 #include "storage/log_reader.hpp"
 #include "util/arena.hpp"
 #include "storage/partition_log.hpp"
@@ -41,12 +44,12 @@ class PartitionContext {
         : log_root_(std::move(log_root)), topic_name_(std::move(topic_name)), partition_(partition),
           log_(log_root_, topic_name_, partition_), segment_bytes_(segment_bytes), ring_(ring) {}
 
-    [[nodiscard]] auto produce(std::span<const uint8_t> record_batch_data) -> ProduceResult {
+    [[nodiscard]] auto produce(std::span<const uint8_t> record_batch_data) -> net::Task<ProduceResult> {
         std::lock_guard lock(mutex_);
 
         auto count_result = util::record_batch_count(record_batch_data);
         if (!count_result) {
-            return {};
+            co_return ProduceResult{};
         }
 
         auto record_count = *count_result;
@@ -58,7 +61,7 @@ class PartitionContext {
         std::error_code dir_ec;
         std::filesystem::create_directories(dir, dir_ec);
         if (dir_ec) {
-            return {};
+            co_return ProduceResult{};
         }
 
         size_t blob_size = record_batch_data.size();
@@ -76,7 +79,7 @@ class PartitionContext {
         if (write_fd_ < 0) {
             auto path = log_.segment_path(current_segment_base_offset_);
             write_fd_ = ::open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0644);
-            if (write_fd_ < 0) return {};
+            if (write_fd_ < 0) co_return ProduceResult{};
         }
 
         if (next_offset_ % kSparseIndexInterval == 0) {
@@ -85,19 +88,9 @@ class PartitionContext {
         }
 
         if (ring_) {
-            io_uring_sqe* sqe = io_uring_get_sqe(ring_);
-            if (sqe) {
-                io_uring_prep_write(sqe, write_fd_, record_batch_data.data(),
-                                    static_cast<unsigned int>(blob_size), 0);
-                io_uring_submit(ring_);
-                io_uring_cqe* cqe = nullptr;
-                io_uring_wait_cqe(ring_, &cqe);
-                if (cqe->res < 0) {
-                    io_uring_cqe_seen(ring_, cqe);
-                    return {};
-                }
-                io_uring_cqe_seen(ring_, cqe);
-            }
+            auto res = co_await net::UringWriteAwaiter(ring_, write_fd_, record_batch_data.data(),
+                                                        static_cast<unsigned int>(blob_size), 0);
+            if (res < 0) co_return ProduceResult{};
         } else {
             ::write(write_fd_, record_batch_data.data(), blob_size);
         }
@@ -105,7 +98,7 @@ class PartitionContext {
         auto base_offset = next_offset_;
         current_segment_bytes_ += blob_size;
         next_offset_ += record_count;
-        return {.base_offset = base_offset, .log_append_time_ms = append_time};
+        co_return ProduceResult{.base_offset = base_offset, .log_append_time_ms = append_time};
     }
 
     [[nodiscard]] auto fetch() -> std::vector<uint8_t> {

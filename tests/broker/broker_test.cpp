@@ -43,7 +43,7 @@ TEST(BrokerTest, HandlesValidVersion) {
     RequestHeader header{18, 0, 42};
     ApiVersionsRequest req{header};
 
-    auto resp = Broker(ClusterMetadata{}, "").handle(req);
+    auto resp = Broker(ClusterMetadata{}, "").handle(req).result();
     auto& r = std::get<ApiVersionsResponse>(resp);
     EXPECT_EQ(r.correlation_id, 42);
     EXPECT_EQ(r.error_code, 0);
@@ -53,7 +53,7 @@ TEST(BrokerTest, HandlesUnsupportedVersion) {
     RequestHeader header{18, 26442, 42};
     ApiVersionsRequest req{header};
 
-    auto resp = Broker(ClusterMetadata{}, "").handle(req);
+    auto resp = Broker(ClusterMetadata{}, "").handle(req).result();
     auto& r = std::get<ApiVersionsResponse>(resp);
     EXPECT_EQ(r.correlation_id, 42);
     EXPECT_EQ(r.error_code, 35);
@@ -63,7 +63,7 @@ TEST(BrokerTest, HandlesDescribeTopicPartitionsUnknownTopic) {
     RequestHeader header{75, 0, 42};
     DescribeTopicPartitionsRequest req{header, {"foo"}};
 
-    auto resp = Broker(ClusterMetadata{}, "").handle(req);
+    auto resp = Broker(ClusterMetadata{}, "").handle(req).result();
     auto r = std::get_if<DescribeTopicPartitionsResponse>(&resp);
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->correlation_id, 42);
@@ -83,7 +83,7 @@ TEST(BrokerTest, ReturnsApiKeysForValidVersion) {
     RequestHeader header{18, 4, 42};
     ApiVersionsRequest req{header};
 
-    auto resp = Broker(ClusterMetadata{}, "").handle(req);
+    auto resp = Broker(ClusterMetadata{}, "").handle(req).result();
     auto& r = std::get<ApiVersionsResponse>(resp);
     EXPECT_EQ(r.error_code, 0);
     ASSERT_FALSE(r.api_keys.empty());
@@ -122,7 +122,7 @@ TEST(BrokerTest, HandlesDescribeTopicPartitionsKnownTopic) {
     RequestHeader header{75, 0, 42};
     DescribeTopicPartitionsRequest req{header, {"foo"}};
 
-    auto resp = Broker(std::move(meta), "").handle(req);
+    auto resp = Broker(std::move(meta), "").handle(req).result();
     auto r = std::get_if<DescribeTopicPartitionsResponse>(&resp);
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->correlation_id, 42);
@@ -161,7 +161,7 @@ TEST(BrokerTest, HandlesDescribeTopicPartitionsTopicNotFoundInMetadata) {
     RequestHeader header{75, 0, 42};
     DescribeTopicPartitionsRequest req{header, {"nonexistent"}};
 
-    auto resp = Broker(std::move(meta), "").handle(req);
+    auto resp = Broker(std::move(meta), "").handle(req).result();
     auto r = std::get_if<DescribeTopicPartitionsResponse>(&resp);
     ASSERT_NE(r, nullptr);
     ASSERT_EQ(r->topics.size(), 1u);
@@ -221,7 +221,7 @@ TEST(BrokerTest, SortsDescribeTopicPartitionsMultiTopicAlphabetically) {
     RequestHeader header{75, 0, 42};
     DescribeTopicPartitionsRequest req{header, {"zebra", "apple"}};
 
-    auto resp = Broker(std::move(meta), "").handle(req);
+    auto resp = Broker(std::move(meta), "").handle(req).result();
     auto r = std::get_if<DescribeTopicPartitionsResponse>(&resp);
     ASSERT_NE(r, nullptr);
     ASSERT_EQ(r->topics.size(), 2u);
@@ -235,7 +235,7 @@ TEST(BrokerTest, ReturnsFetchApiEntryWithMaxVersion16) {
     RequestHeader header{18, 4, 42};
     ApiVersionsRequest req{header};
 
-    auto resp = Broker(ClusterMetadata{}, "").handle(req);
+    auto resp = Broker(ClusterMetadata{}, "").handle(req).result();
     auto& r = std::get<ApiVersionsResponse>(resp);
     EXPECT_EQ(r.error_code, 0);
     ASSERT_FALSE(r.api_keys.empty());
@@ -249,7 +249,7 @@ TEST(BrokerTest, ReturnsProduceApiEntryWithMaxVersion11) {
     RequestHeader header{18, 4, 42};
     ApiVersionsRequest req{header};
 
-    auto resp = Broker(ClusterMetadata{}, "").handle(req);
+    auto resp = Broker(ClusterMetadata{}, "").handle(req).result();
     auto& r = std::get<ApiVersionsResponse>(resp);
     EXPECT_EQ(r.error_code, 0);
     ASSERT_FALSE(r.api_keys.empty());
@@ -263,7 +263,7 @@ TEST(BrokerTest, HandlesFetchRequestEmptyTopics) {
     RequestHeader header{1, 16, 42};
     FetchRequest req{header, {}, 0};
 
-    auto resp = Broker(ClusterMetadata{}, "").handle(req);
+    auto resp = Broker(ClusterMetadata{}, "").handle(req).result();
     auto r = std::get_if<FetchResponse>(&resp);
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->correlation_id, 42);
@@ -295,7 +295,7 @@ TEST(BrokerTest, HandlesFetchRequestUnknownTopic) {
     RequestHeader header{1, 16, 42};
     FetchRequest req{header, {{.topic_id = topic_uuid, .partitions = {{.partition_index = 0}}}}, 0};
 
-    auto resp = Broker(ClusterMetadata{}, "").handle(req);
+    auto resp = Broker(ClusterMetadata{}, "").handle(req).result();
     auto r = std::get_if<FetchResponse>(&resp);
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->correlation_id, 42);
@@ -336,7 +336,7 @@ TEST(BrokerTest, HandlesFetchRequestKnownTopicNoMessages) {
         {{.topic_id = topic_uuid, .partitions = {{.partition_index = 0}, {.partition_index = 1}}}},
         0};
 
-    auto resp = Broker(std::move(meta), "").handle(req);
+    auto resp = Broker(std::move(meta), "").handle(req).result();
     auto r = std::get_if<FetchResponse>(&resp);
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->correlation_id, 42);
@@ -377,7 +377,7 @@ TEST(BrokerTest, HandlesFetchRequestKnownTopicNoPartitions) {
     RequestHeader header{1, 16, 42};
     FetchRequest req{header, {{.topic_id = topic_uuid, .partitions = {}}}, 0};
 
-    auto resp = Broker(std::move(meta), "").handle(req);
+    auto resp = Broker(std::move(meta), "").handle(req).result();
     auto r = std::get_if<FetchResponse>(&resp);
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->correlation_id, 42);
@@ -425,7 +425,7 @@ TEST(BrokerTest, HandlesFetchRequestReadsRecordBatchFromDisk) {
     RequestHeader header{1, 16, 42};
     FetchRequest req{header, {{.topic_id = topic_uuid, .partitions = {{.partition_index = 0}}}}, 0};
 
-    auto resp = Broker(std::move(meta), tmp_dir).handle(req);
+    auto resp = Broker(std::move(meta), tmp_dir).handle(req).result();
     auto r = std::get_if<FetchResponse>(&resp);
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->correlation_id, 42);
@@ -445,7 +445,7 @@ TEST(BrokerTest, HandlesProduceRequestUnknownTopicOrPartition) {
     ProduceRequest req{
         header, {{.topic_name = "foo", .partitions = {{.partition_index = 0, .records = {}}}}}};
 
-    auto resp = Broker(ClusterMetadata{}, "").handle(req);
+    auto resp = Broker(ClusterMetadata{}, "").handle(req).result();
     auto r = std::get_if<ProduceResponse>(&resp);
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->correlation_id, 42);
@@ -489,7 +489,7 @@ TEST(BrokerTest, HandlesProduceRequestValidTopicAndPartition) {
                          {.partition_index = 1, .records = {}}}}},
     };
 
-    auto resp = Broker(std::move(meta), "").handle(req);
+    auto resp = Broker(std::move(meta), "").handle(req).result();
     auto r = std::get_if<ProduceResponse>(&resp);
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->correlation_id, 999);
@@ -536,7 +536,7 @@ TEST(BrokerTest, HandlesProduceRequestKnownTopicUnknownPartition) {
                          .partitions = {{.partition_index = 0, .records = {}},
                                         {.partition_index = 99, .records = {}}}}}};
 
-    auto resp = Broker(std::move(meta), "").handle(req);
+    auto resp = Broker(std::move(meta), "").handle(req).result();
     auto r = std::get_if<ProduceResponse>(&resp);
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->correlation_id, 42);
@@ -582,7 +582,7 @@ TEST(BrokerTest, HandlesProduceRequestWritesToDisk) {
                        {{.topic_name = "orders",
                          .partitions = {{.partition_index = 0, .records = record_batch}}}}};
 
-    auto resp = Broker(std::move(meta), tmp_dir).handle(req);
+    auto resp = Broker(std::move(meta), tmp_dir).handle(req).result();
     auto r = std::get_if<ProduceResponse>(&resp);
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->correlation_id, 999);
@@ -642,7 +642,7 @@ TEST(BrokerTest, HandlesProduceRequestWriteFailure) {
                        {{.topic_name = "orders",
                          .partitions = {{.partition_index = 0, .records = record_batch}}}}};
 
-    auto resp = Broker(std::move(meta), tmp_dir).handle(req);
+    auto resp = Broker(std::move(meta), tmp_dir).handle(req).result();
     auto r = std::get_if<ProduceResponse>(&resp);
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->correlation_id, 999);
@@ -692,7 +692,7 @@ TEST(BrokerTest, ProducesSequentialOffsets) {
             header,
             {{.topic_name = "orders", .partitions = {{.partition_index = 0, .records = records}}}}};
 
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<ProduceResponse>(&resp);
         ASSERT_NE(r, nullptr);
         ASSERT_EQ(r->responses.size(), 1u);
@@ -752,7 +752,7 @@ TEST(BrokerTest, ProducesConcurrentSamePartition) {
             ProduceRequest req{header,
                                {{.topic_name = "orders",
                                  .partitions = {{.partition_index = 0, .records = records}}}}};
-            auto resp = broker.handle(req);
+            auto resp = broker.handle(req).result();
             auto r = std::get_if<ProduceResponse>(&resp);
             ASSERT_NE(r, nullptr);
             ASSERT_EQ(r->responses.size(), 1u);
@@ -823,7 +823,7 @@ TEST(BrokerTest, ProducesConcurrentDifferentPartitions) {
                 ProduceRequest req{header,
                                    {{.topic_name = "orders",
                                      .partitions = {{.partition_index = p, .records = records}}}}};
-                auto resp = broker.handle(req);
+                auto resp = broker.handle(req).result();
                 auto r = std::get_if<ProduceResponse>(&resp);
                 ASSERT_NE(r, nullptr);
                 ASSERT_EQ(r->responses.size(), 1u);
@@ -888,7 +888,7 @@ TEST(BrokerTest, FetchReturnsProducedRecords) {
                            {{.topic_name = "orders",
                              .partitions = {{.partition_index = 0, .records = batch0},
                                             {.partition_index = 1, .records = batch1}}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<ProduceResponse>(&resp);
         ASSERT_NE(r, nullptr);
         ASSERT_EQ(r->responses[0].partitions.size(), 2u);
@@ -902,7 +902,7 @@ TEST(BrokerTest, FetchReturnsProducedRecords) {
                          {{.topic_id = topic_uuid,
                            .partitions = {{.partition_index = 0}, {.partition_index = 1}}}},
                          0};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<FetchResponse>(&resp);
         ASSERT_NE(r, nullptr);
         ASSERT_EQ(r->responses.size(), 1u);
@@ -939,7 +939,7 @@ TEST(BrokerTest, HandlesMetadataRequestReturnsTopicInfo) {
 
     RequestHeader header{3, 0, 42};
     MetadataRequest req{header, {"orders"}, false};
-    auto resp = Broker(std::move(meta), "").handle(req);
+    auto resp = Broker(std::move(meta), "").handle(req).result();
     auto r = std::get_if<MetadataResponse>(&resp);
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->correlation_id, 42);
@@ -985,7 +985,7 @@ TEST(BrokerTest, HandlesMetadataRequestEmptyTopicsReturnsAll) {
 
     RequestHeader header{3, 0, 42};
     MetadataRequest req{header, {}, false};
-    auto resp = Broker(std::move(meta), "").handle(req);
+    auto resp = Broker(std::move(meta), "").handle(req).result();
     auto r = std::get_if<MetadataResponse>(&resp);
     ASSERT_NE(r, nullptr);
     ASSERT_EQ(r->topics.size(), 1u);
@@ -1032,7 +1032,7 @@ TEST(BrokerTest, HandlesListOffsetsEarliestLatest) {
             -1,
             0,
             {{.topic_name = "orders", .partitions = {{.partition_index = 0, .timestamp = -1}}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<ListOffsetsResponse>(&resp);
         ASSERT_NE(r, nullptr);
         ASSERT_EQ(r->topics.size(), 1u);
@@ -1048,7 +1048,7 @@ TEST(BrokerTest, HandlesListOffsetsEarliestLatest) {
             -1,
             0,
             {{.topic_name = "orders", .partitions = {{.partition_index = 0, .timestamp = -2}}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<ListOffsetsResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->topics[0].partitions[0].error_code, 0);
@@ -1091,7 +1091,7 @@ TEST(BrokerTest, ParseRecordBatchEmptyData) {
 TEST(BrokerTest, HandlesFindCoordinatorRequest) {
     RequestHeader header{10, 0, 42};
     FindCoordinatorRequest req{header, "my-group", 0};
-    auto resp = Broker(ClusterMetadata{}, "").handle(req);
+    auto resp = Broker(ClusterMetadata{}, "").handle(req).result();
     auto r = std::get_if<FindCoordinatorResponse>(&resp);
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->correlation_id, 42);
@@ -1110,7 +1110,7 @@ TEST(BrokerTest, HandlesOffsetCommitRequest) {
                             {{.topic_name = "test",
                               .partitions = {{.partition_index = 0, .committed_offset = 100},
                                              {.partition_index = 1, .committed_offset = 200}}}}};
-    auto resp = Broker(ClusterMetadata{}, "").handle(req);
+    auto resp = Broker(ClusterMetadata{}, "").handle(req).result();
     auto r = std::get_if<OffsetCommitResponse>(&resp);
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->correlation_id, 42);
@@ -1138,7 +1138,7 @@ TEST(BrokerTest, HandlesOffsetFetchEndToEnd) {
     {
         RequestHeader header{9, 0, 42};
         OffsetFetchRequest req{header, "g", {{.topic_name = "t", .partition_indexes = {0}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<OffsetFetchResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->correlation_id, 42);
@@ -1155,7 +1155,7 @@ TEST(BrokerTest, HandlesJoinGroupNewMember) {
     {
         RequestHeader header{11, 0, 42};
         JoinGroupRequest req{header, "g", 30000, "", "consumer", {{"range", {}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<JoinGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1168,7 +1168,7 @@ TEST(BrokerTest, HandlesJoinGroupNewMember) {
     {
         RequestHeader header{11, 0, 43};
         JoinGroupRequest req{header, "g", 30000, "", "consumer", {{"range", {}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<JoinGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->generation_id, 1); // state is still AwaitingSync, no increment
@@ -1182,7 +1182,7 @@ TEST(BrokerTest, HandlesSyncGroupLeaderAndFollower) {
     {
         RequestHeader header{11, 0, 42};
         JoinGroupRequest req{header, "sg", 30000, "", "consumer", {{"range", {}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<JoinGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1193,7 +1193,7 @@ TEST(BrokerTest, HandlesSyncGroupLeaderAndFollower) {
     {
         RequestHeader header{14, 0, 43};
         SyncGroupRequest req{header, "sg", 1, leader_member, {{"m1", {0x01}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<SyncGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1202,7 +1202,7 @@ TEST(BrokerTest, HandlesSyncGroupLeaderAndFollower) {
     {
         RequestHeader header{14, 0, 44};
         SyncGroupRequest req{header, "sg", 1, "m1", {}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<SyncGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1213,7 +1213,7 @@ TEST(BrokerTest, HandlesSyncGroupLeaderAndFollower) {
     {
         RequestHeader header{14, 0, 45};
         SyncGroupRequest req{header, "sg", 99, leader_member, {}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<SyncGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 82);
@@ -1227,7 +1227,7 @@ TEST(BrokerTest, HeartbeatUpdatesTimestampWithoutEviction) {
     {
         RequestHeader header{11, 0, 42};
         JoinGroupRequest req{header, "hbt", 30000, "", "consumer", {{"range", {}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<JoinGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->generation_id, 1);
@@ -1237,7 +1237,7 @@ TEST(BrokerTest, HeartbeatUpdatesTimestampWithoutEviction) {
     {
         RequestHeader header{14, 0, 43};
         SyncGroupRequest req{header, "hbt", 1, member, {{member, {0x01}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<SyncGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1246,7 +1246,7 @@ TEST(BrokerTest, HeartbeatUpdatesTimestampWithoutEviction) {
     {
         RequestHeader header{12, 0, 44};
         HeartbeatRequest req{header, "hbt", 1, member, {}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<HeartbeatResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1255,7 +1255,7 @@ TEST(BrokerTest, HeartbeatUpdatesTimestampWithoutEviction) {
     {
         RequestHeader header{12, 0, 45};
         HeartbeatRequest req{header, "hbt", 1, member, {}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<HeartbeatResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1294,7 +1294,7 @@ TEST(BrokerTest, SessionTimeoutEvictsStaleMember) {
     {
         RequestHeader header{12, 0, 46};
         HeartbeatRequest req{header, "hbe", 2, "b", {}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<HeartbeatResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1303,7 +1303,7 @@ TEST(BrokerTest, SessionTimeoutEvictsStaleMember) {
     {
         RequestHeader header{12, 0, 47};
         HeartbeatRequest req{header, "hbe", 2, "a", {}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<HeartbeatResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 82);
@@ -1312,7 +1312,7 @@ TEST(BrokerTest, SessionTimeoutEvictsStaleMember) {
     {
         RequestHeader header{11, 0, 48};
         JoinGroupRequest req{header, "hbe", 30000, "b", "consumer", {{"range", {}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<JoinGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1327,7 +1327,7 @@ TEST(BrokerTest, HandlesHeartbeatValidAndInvalidGeneration) {
     {
         RequestHeader header{11, 0, 42};
         JoinGroupRequest req{header, "hb", 30000, "", "consumer", {{"range", {}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<JoinGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1338,7 +1338,7 @@ TEST(BrokerTest, HandlesHeartbeatValidAndInvalidGeneration) {
     {
         RequestHeader header{14, 0, 43};
         SyncGroupRequest req{header, "hb", 1, member, {{member, {0x01}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<SyncGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1347,7 +1347,7 @@ TEST(BrokerTest, HandlesHeartbeatValidAndInvalidGeneration) {
     {
         RequestHeader header{12, 0, 44};
         HeartbeatRequest req{header, "hb", 1, member, {}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<HeartbeatResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1356,7 +1356,7 @@ TEST(BrokerTest, HandlesHeartbeatValidAndInvalidGeneration) {
     {
         RequestHeader header{12, 0, 45};
         HeartbeatRequest req{header, "hb", 99, member, {}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<HeartbeatResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 82);
@@ -1371,7 +1371,7 @@ TEST(BrokerTest, GroupStateTransitionsToAwaitingSync) {
     {
         RequestHeader header{11, 0, 42};
         JoinGroupRequest req{header, "st", 30000, "", "consumer", {{"range", {}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<JoinGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1382,7 +1382,7 @@ TEST(BrokerTest, GroupStateTransitionsToAwaitingSync) {
     {
         RequestHeader header{12, 0, 43};
         HeartbeatRequest req{header, "st", generation, member, {}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<HeartbeatResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 82);
@@ -1397,7 +1397,7 @@ TEST(BrokerTest, GroupStateTransitionsToStable) {
     {
         RequestHeader header{11, 0, 42};
         JoinGroupRequest req{header, "st2", 30000, "", "consumer", {{"range", {}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<JoinGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1408,7 +1408,7 @@ TEST(BrokerTest, GroupStateTransitionsToStable) {
     {
         RequestHeader header{14, 0, 43};
         SyncGroupRequest req{header, "st2", generation, member, {{"m1", {0x01}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<SyncGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1417,7 +1417,7 @@ TEST(BrokerTest, GroupStateTransitionsToStable) {
     {
         RequestHeader header{12, 0, 44};
         HeartbeatRequest req{header, "st2", generation, member, {}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<HeartbeatResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1431,7 +1431,7 @@ TEST(BrokerTest, GroupStateRejoinIncrementsGeneration) {
     {
         RequestHeader header{11, 0, 42};
         JoinGroupRequest req{header, "st3", 30000, "", "consumer", {{"range", {}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<JoinGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1442,7 +1442,7 @@ TEST(BrokerTest, GroupStateRejoinIncrementsGeneration) {
     {
         RequestHeader header{14, 0, 43};
         SyncGroupRequest req{header, "st3", 1, member, {{"m1", {0x01}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<SyncGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1451,7 +1451,7 @@ TEST(BrokerTest, GroupStateRejoinIncrementsGeneration) {
     {
         RequestHeader header{11, 0, 44};
         JoinGroupRequest req{header, "st3", 30000, "", "consumer", {{"range", {}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<JoinGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->generation_id, 2);
@@ -1466,7 +1466,7 @@ TEST(BrokerTest, GroupStateHeartbeatDuringAwaitingSync) {
     {
         RequestHeader header{11, 0, 42};
         JoinGroupRequest req{header, "st4", 30000, "", "consumer", {{"range", {}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<JoinGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1477,7 +1477,7 @@ TEST(BrokerTest, GroupStateHeartbeatDuringAwaitingSync) {
     {
         RequestHeader header{12, 0, 43};
         HeartbeatRequest req{header, "st4", generation, member, {}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<HeartbeatResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 82);
@@ -1486,7 +1486,7 @@ TEST(BrokerTest, GroupStateHeartbeatDuringAwaitingSync) {
     {
         RequestHeader header{14, 0, 44};
         SyncGroupRequest req{header, "st4", generation, member, {{"m1", {0x01}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<SyncGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1495,7 +1495,7 @@ TEST(BrokerTest, GroupStateHeartbeatDuringAwaitingSync) {
     {
         RequestHeader header{12, 0, 45};
         HeartbeatRequest req{header, "st4", generation, member, {}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<HeartbeatResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1509,7 +1509,7 @@ TEST(BrokerTest, LeaveGroupRemovesMemberAndTransitionsToEmpty) {
     {
         RequestHeader header{11, 0, 42};
         JoinGroupRequest req{header, "lg", 30000, "", "consumer", {{"range", {}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<JoinGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         member = r->member_id;
@@ -1518,7 +1518,7 @@ TEST(BrokerTest, LeaveGroupRemovesMemberAndTransitionsToEmpty) {
     {
         RequestHeader header{13, 0, 43};
         LeaveGroupRequest req{header, "lg", member};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<LeaveGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1527,7 +1527,7 @@ TEST(BrokerTest, LeaveGroupRemovesMemberAndTransitionsToEmpty) {
     {
         RequestHeader header{12, 0, 44};
         HeartbeatRequest req{header, "lg", 1, member, {}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<HeartbeatResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 82);
@@ -1540,14 +1540,14 @@ TEST(BrokerTest, LeaveGroupReturnsUnknownMemberId) {
     {
         RequestHeader header{11, 0, 42};
         JoinGroupRequest req{header, "lg2", 30000, "", "consumer", {{"range", {}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         ASSERT_NE(std::get_if<JoinGroupResponse>(&resp), nullptr);
     }
 
     {
         RequestHeader header{13, 0, 43};
         LeaveGroupRequest req{header, "lg2", "ghost"};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<LeaveGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 25);
@@ -1561,7 +1561,7 @@ TEST(BrokerTest, LeaveGroupOneOfTwoMembersTransitionsToAwaitingSync) {
     {
         RequestHeader header{11, 0, 42};
         JoinGroupRequest req{header, "lg3", 30000, "a", "consumer", {{"range", {}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<JoinGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->generation_id, 1);
@@ -1573,7 +1573,7 @@ TEST(BrokerTest, LeaveGroupOneOfTwoMembersTransitionsToAwaitingSync) {
     {
         RequestHeader header{11, 0, 43};
         JoinGroupRequest req{header, "lg3", 30000, "b", "consumer", {{"range", {}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<JoinGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->generation_id, 1); // state is still AwaitingSync, no increment
@@ -1584,7 +1584,7 @@ TEST(BrokerTest, LeaveGroupOneOfTwoMembersTransitionsToAwaitingSync) {
     {
         RequestHeader header{13, 0, 44};
         LeaveGroupRequest req{header, "lg3", member_a};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<LeaveGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1593,7 +1593,7 @@ TEST(BrokerTest, LeaveGroupOneOfTwoMembersTransitionsToAwaitingSync) {
     {
         RequestHeader header{12, 0, 45};
         HeartbeatRequest req{header, "lg3", gen_b, member_b, {}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<HeartbeatResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 82);
@@ -1607,7 +1607,7 @@ TEST(BrokerTest, RebalanceKeepsGenerationStable) {
     {
         RequestHeader header{11, 0, 42};
         JoinGroupRequest req{header, "rb", 30000, "a", "consumer", {{"range", {}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<JoinGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1618,7 +1618,7 @@ TEST(BrokerTest, RebalanceKeepsGenerationStable) {
     {
         RequestHeader header{14, 0, 43};
         SyncGroupRequest req{header, "rb", 1, member_a, {{member_a, {0x01}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<SyncGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1628,7 +1628,7 @@ TEST(BrokerTest, RebalanceKeepsGenerationStable) {
     {
         RequestHeader header{11, 0, 44};
         JoinGroupRequest req{header, "rb", 30000, "b", "consumer", {{"range", {}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<JoinGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1639,7 +1639,7 @@ TEST(BrokerTest, RebalanceKeepsGenerationStable) {
     {
         RequestHeader header{14, 0, 45};
         SyncGroupRequest req{header, "rb", 2, member_b, {{member_b, {0x02}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<SyncGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1648,7 +1648,7 @@ TEST(BrokerTest, RebalanceKeepsGenerationStable) {
     {
         RequestHeader header{12, 0, 46};
         HeartbeatRequest req{header, "rb", 2, member_b, {}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<HeartbeatResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1657,7 +1657,7 @@ TEST(BrokerTest, RebalanceKeepsGenerationStable) {
     {
         RequestHeader header{11, 0, 47};
         JoinGroupRequest req{header, "rb", 30000, member_a, "consumer", {{"range", {}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<JoinGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1667,7 +1667,7 @@ TEST(BrokerTest, RebalanceKeepsGenerationStable) {
     {
         RequestHeader header{14, 0, 48};
         SyncGroupRequest req{header, "rb", 3, member_a, {{member_a, {0x01}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<SyncGroupResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1676,7 +1676,7 @@ TEST(BrokerTest, RebalanceKeepsGenerationStable) {
     {
         RequestHeader header{12, 0, 49};
         HeartbeatRequest req{header, "rb", 3, member_a, {}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<HeartbeatResponse>(&resp);
         ASSERT_NE(r, nullptr);
         EXPECT_EQ(r->error_code, 0);
@@ -1719,7 +1719,7 @@ TEST(BrokerTest, SegmentRollCreatesNewFile) {
         ProduceRequest req{
             header,
             {{.topic_name = "orders", .partitions = {{.partition_index = 0, .records = batch}}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<ProduceResponse>(&resp);
         ASSERT_NE(r, nullptr);
         ASSERT_EQ(r->responses.size(), 1u);
@@ -1745,7 +1745,7 @@ TEST(BrokerTest, SegmentRollCreatesNewFile) {
         RequestHeader header{1, 16, 200};
         FetchRequest req{
             header, {{.topic_id = topic_uuid, .partitions = {{.partition_index = 0}}}}, 0};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<FetchResponse>(&resp);
         ASSERT_NE(r, nullptr);
         ASSERT_EQ(r->responses.size(), 1u);
@@ -1793,7 +1793,7 @@ TEST(BrokerTest, SegmentReadsAllFilesInOrder) {
         ProduceRequest req{
             header,
             {{.topic_name = "orders", .partitions = {{.partition_index = 0, .records = batch}}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<ProduceResponse>(&resp);
         ASSERT_NE(r, nullptr);
         ASSERT_EQ(r->responses.size(), 1u);
@@ -1805,7 +1805,7 @@ TEST(BrokerTest, SegmentReadsAllFilesInOrder) {
         RequestHeader header{1, 16, 200};
         FetchRequest req{
             header, {{.topic_id = topic_uuid, .partitions = {{.partition_index = 0}}}}, 0};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<FetchResponse>(&resp);
         ASSERT_NE(r, nullptr);
         ASSERT_EQ(r->responses.size(), 1u);
@@ -1831,7 +1831,7 @@ TEST(BrokerTest, SparseIndexRecordsEntriesAtIntervals) {
     broker::PartitionContext ctx(tmp_dir, "sparse", 0, 0);
 
     for (int i = 0; i < 2000; ++i) {
-        auto result = ctx.produce(make_record_batch_v2({{0x01}}));
+        auto result = ctx.produce(make_record_batch_v2({{0x01}})).result();
         ASSERT_EQ(result.base_offset, i);
     }
 
@@ -1849,7 +1849,7 @@ TEST(BrokerTest, SparseIndexClearsOnSegmentRoll) {
     auto tmp_dir = make_tmp_log_dir();
     broker::PartitionContext ctx(tmp_dir, "rollidx", 0, 6);
 
-    auto first = ctx.produce(make_record_batch_v2({{0x00, 0x00, 0x00, 0x00}}));
+    auto first = ctx.produce(make_record_batch_v2({{0x00, 0x00, 0x00, 0x00}})).result();
     EXPECT_EQ(first.base_offset, 0);
 
     auto index_before = ctx.segment_index();
@@ -1857,7 +1857,7 @@ TEST(BrokerTest, SparseIndexClearsOnSegmentRoll) {
     EXPECT_EQ(index_before[0].offset, 0);
     EXPECT_EQ(index_before[0].file_position, 0u);
 
-    auto second = ctx.produce(make_record_batch_v2({{0x00, 0x00, 0x00, 0x00}}));
+    auto second = ctx.produce(make_record_batch_v2({{0x00, 0x00, 0x00, 0x00}})).result();
     EXPECT_EQ(second.base_offset, 1);
 
     auto index_after = ctx.segment_index();
@@ -1897,7 +1897,7 @@ TEST(BrokerTest, FetchWithOffsetReturnsSubset) {
         ProduceRequest req{
             header,
             {{.topic_name = "orders", .partitions = {{.partition_index = 0, .records = batch}}}}};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<ProduceResponse>(&resp);
         ASSERT_NE(r, nullptr);
         ASSERT_EQ(r->responses.size(), 1u);
@@ -1913,7 +1913,7 @@ TEST(BrokerTest, FetchWithOffsetReturnsSubset) {
             {{.topic_id = topic_uuid,
               .partitions = {{.partition_index = 0, .fetch_offset = 1, .max_bytes = 100}}}},
             0};
-        auto resp = broker.handle(req);
+        auto resp = broker.handle(req).result();
         auto r = std::get_if<FetchResponse>(&resp);
         ASSERT_NE(r, nullptr);
         ASSERT_EQ(r->responses.size(), 1u);
@@ -1956,7 +1956,7 @@ TEST(BrokerTest, GroupCommitWritesMultipleRecordsSingleBatch) {
         header,
         {{.topic_name = "orders", .partitions = {{.partition_index = 0, .records = batch}}}}};
 
-    auto resp = Broker(std::move(meta), tmp_dir).handle(req);
+    auto resp = Broker(std::move(meta), tmp_dir).handle(req).result();
     auto r = std::get_if<ProduceResponse>(&resp);
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->correlation_id, 999);
