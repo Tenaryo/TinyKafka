@@ -71,10 +71,10 @@ class WorkerReactor {
 
     static constexpr auto kMetricsInterval = std::chrono::seconds(30);
     static constexpr int kMaxEvents = 1024;
-    static constexpr int kEpollTimeoutMs = 1;
 
     int epoll_fd_;
     int server_fd_;
+    int wakeup_fd_{-1};
     io_uring ring_{};
     size_t reactor_id_;
     size_t reactor_count_;
@@ -83,7 +83,7 @@ class WorkerReactor {
     const shard::ShardRouter& shard_router_;
     GroupCoordinator& coordinator_;
     std::vector<shard::CrossReactorQueues*>& all_queues_;
-    shard::CrossReactorQueues own_queues_;
+    shard::CrossReactorQueues& my_queues_;
 
     std::unordered_map<std::string, std::unique_ptr<broker::PartitionContext>> partition_contexts_;
     Broker broker_;

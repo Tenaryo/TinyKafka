@@ -7,6 +7,7 @@
 
 #include <fcntl.h>
 #include <sys/epoll.h>
+#include <sys/eventfd.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -31,12 +32,12 @@ WorkerReactor::WorkerReactor(const config::Config& config,
     : epoll_fd_(::epoll_create1(EPOLL_CLOEXEC)), reactor_id_(reactor_id),
       reactor_count_(shard_router.reactor_count()), metadata_(metadata),
       shard_router_(shard_router), coordinator_(coordinator), all_queues_(all_queues),
-      broker_(metadata_,
-              config.log_root,
-              config.segment_bytes,
-              &ring_,
-              coordinator_,
-              partition_contexts_),
+      my_queues_(*all_queues[reactor_id]), broker_(metadata_,
+                                                   config.log_root,
+                                                   config.segment_bytes,
+                                                   &ring_,
+                                                   coordinator_,
+                                                   partition_contexts_),
       max_message_bytes_(config.max_message_bytes),
       max_write_buffer_bytes_(config.max_write_buffer_bytes),
       last_metrics_log_(std::chrono::steady_clock::now()) {
@@ -63,6 +64,15 @@ WorkerReactor::WorkerReactor(const config::Config& config,
         logging::error("WorkerReactor " + std::to_string(reactor_id_) +
                        ": epoll_ctl ADD server failed: " + std::to_string(errno));
     }
+
+    wakeup_fd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+    if (wakeup_fd_ >= 0) {
+        my_queues_.set_wakeup_fd(wakeup_fd_);
+        epoll_event wev{};
+        wev.events = EPOLLIN;
+        wev.data.fd = wakeup_fd_;
+        ::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, wakeup_fd_, &wev);
+    }
 }
 
 WorkerReactor::~WorkerReactor() {
@@ -79,6 +89,9 @@ WorkerReactor::~WorkerReactor() {
     if (server_fd_ >= 0) {
         ::close(server_fd_);
     }
+    if (wakeup_fd_ >= 0) {
+        ::close(wakeup_fd_);
+    }
 }
 
 void WorkerReactor::run() {
@@ -86,7 +99,7 @@ void WorkerReactor::run() {
     logging::info("WorkerReactor " + std::to_string(reactor_id_) + " started");
 
     while (running_) {
-        int nfds = ::epoll_wait(epoll_fd_, events.data(), events.size(), kEpollTimeoutMs);
+        int nfds = ::epoll_wait(epoll_fd_, events.data(), events.size(), -1);
         if (nfds < 0) [[unlikely]] {
             if (errno == EINTR) {
                 continue;
@@ -102,6 +115,9 @@ void WorkerReactor::run() {
 
             if (fd == server_fd_) {
                 handle_accept();
+            } else if (fd == wakeup_fd_) {
+                uint64_t dummy = 0;
+                [[maybe_unused]] auto _ = ::read(wakeup_fd_, &dummy, sizeof(dummy));
             } else if ((evts & (EPOLLERR | EPOLLHUP)) != 0) {
                 metrics_.errors_total.fetch_add(1, std::memory_order_relaxed);
                 close_connection(fd);
@@ -286,7 +302,7 @@ void WorkerReactor::handle_read(int fd) {
 
                 conn.have_header = false;
                 conn.read_buf.clear();
-                continue;
+                return;
             }
         }
 
@@ -397,7 +413,7 @@ void WorkerReactor::close_connection(int fd) {
 
 void WorkerReactor::drain_cross_reactor_requests() {
     shard::ForwardedRequest fwd;
-    while (own_queues_.try_pop_request(fwd)) {
+    while (my_queues_.try_pop_request(fwd)) {
         auto resp = broker_.handle(fwd.request);
         auto serialized = serialize(resp);
 
@@ -426,7 +442,7 @@ void WorkerReactor::drain_cross_reactor_requests() {
 
 void WorkerReactor::drain_cross_reactor_responses() {
     shard::ForwardedResponse fwd_resp;
-    while (own_queues_.try_pop_response(fwd_resp)) {
+    while (my_queues_.try_pop_response(fwd_resp)) {
         auto it = connections_.find(fwd_resp.client_fd);
         if (it == connections_.end()) {
             continue;

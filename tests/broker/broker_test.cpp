@@ -726,14 +726,6 @@ TEST(BrokerTest, ProducesSequentialOffsets) {
     std::filesystem::remove_all(tmp_dir);
 }
 
-TEST(BrokerTest, ProducesConcurrentSamePartition) {
-    GTEST_SKIP() << "Sharding: per-partition access is single-threaded by design";
-}
-
-TEST(BrokerTest, ProducesConcurrentDifferentPartitions) {
-    GTEST_SKIP() << "Sharding: per-reactor context map is single-threaded by design";
-}
-
 TEST(BrokerTest, FetchReturnsProducedRecords) {
     constexpr TopicId topic_uuid = {
         0xa1,
