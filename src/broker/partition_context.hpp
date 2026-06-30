@@ -74,8 +74,11 @@ class PartitionContext {
 
         if (write_fd_ < 0) {
             auto path = log_.segment_path(current_segment_base_offset_);
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
             write_fd_ = ::open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0644);
-            if (write_fd_ < 0) return {};
+            if (write_fd_ < 0) {
+                return {};
+            }
         }
 
         if (next_offset_ % kSparseIndexInterval == 0) {
@@ -86,8 +89,11 @@ class PartitionContext {
         if (ring_) {
             io_uring_sqe* sqe = io_uring_get_sqe(ring_);
             if (sqe) {
-                io_uring_prep_write(sqe, write_fd_, record_batch_data.data(),
-                                    static_cast<unsigned int>(blob_size), 0);
+                io_uring_prep_write(sqe,
+                                    write_fd_,
+                                    record_batch_data.data(),
+                                    static_cast<unsigned int>(blob_size),
+                                    0);
                 io_uring_submit(ring_);
                 io_uring_cqe* cqe = nullptr;
                 io_uring_wait_cqe(ring_, &cqe);
@@ -119,7 +125,7 @@ class PartitionContext {
             return {};
         }
 
-        constexpr size_t kMaxFetchChunk = 10 * 1024 * 1024;
+        constexpr size_t kMaxFetchChunk = 10UL * 1024 * 1024;
 
         const SparseIndexEntry* best = nullptr;
         for (const auto& entry : current_segment_index_) {
@@ -135,7 +141,7 @@ class PartitionContext {
         int64_t segment_base = best ? current_segment_base_offset_ : 0;
 
         auto path = log_.segment_path(segment_base);
-        int fd = ::open(path.c_str(), O_RDONLY);
+        int fd = ::open(path.c_str(), O_RDONLY); // NOLINT(cppcoreguidelines-pro-type-vararg)
         if (fd < 0) {
             return {};
         }
@@ -159,8 +165,7 @@ class PartitionContext {
         }
 
         std::vector<uint8_t> raw_data(read_size);
-        auto actual = ::pread(fd, raw_data.data(), read_size,
-                               static_cast<off_t>(start_position));
+        auto actual = ::pread(fd, raw_data.data(), read_size, static_cast<off_t>(start_position));
         ::close(fd);
         if (actual < 0) {
             return {};
@@ -206,7 +211,8 @@ class PartitionContext {
     [[nodiscard]] auto file_fd() -> int {
         if (splice_fd_ < 0 && write_fd_ >= 0) {
             auto path = log_.segment_path(current_segment_base_offset_);
-            splice_fd_ = ::open(path.c_str(), O_RDONLY);
+            splice_fd_ =
+                ::open(path.c_str(), O_RDONLY); // NOLINT(cppcoreguidelines-pro-type-vararg)
         }
         return splice_fd_;
     }
@@ -220,7 +226,9 @@ class PartitionContext {
     [[nodiscard]] auto splice_info(int64_t fetch_offset, int32_t max_bytes) -> SpliceInfo {
         std::lock_guard lock(mutex_);
         auto fd = write_fd_ >= 0 ? write_fd_ : -1;
-        if (fd < 0) return {};
+        if (fd < 0) {
+            return {};
+        }
 
         const SparseIndexEntry* best = nullptr;
         for (const auto& entry : current_segment_index_) {
@@ -232,14 +240,14 @@ class PartitionContext {
         }
         size_t offset = best ? best->file_position : 0;
         size_t available = current_segment_bytes_ - offset;
-        if (available < 65536) return {};
+        if (available < 65536) {
+            return {};
+        }
         size_t len = std::min(available, static_cast<size_t>(max_bytes));
         return {fd, offset, len};
     }
 
-    [[nodiscard]] auto file_position() const -> size_t {
-        return current_segment_bytes_;
-    }
+    [[nodiscard]] auto file_position() const -> size_t { return current_segment_bytes_; }
 
     [[nodiscard]] auto segment_base_offset() const -> int64_t {
         return current_segment_base_offset_;

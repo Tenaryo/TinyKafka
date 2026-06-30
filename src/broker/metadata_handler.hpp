@@ -15,5 +15,5 @@ class MetadataHandler {
   private:
     [[nodiscard]] auto build_topic_metadata(const std::string& topic_name) const -> TopicMetadata;
 
-    const ClusterMetadata& metadata_;
+    const ClusterMetadata& metadata_; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
 };

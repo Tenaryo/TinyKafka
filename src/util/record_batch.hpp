@@ -212,19 +212,30 @@ inline auto parse_record_batch(std::span<const uint8_t> data)
     return all_values;
 }
 
-inline auto record_batch_count(std::span<const uint8_t> data)
-    -> std::expected<int32_t, std::error_code> {
-    if (data.size() < 28) return std::unexpected(make_error_code(std::errc::message_size));
+inline auto
+record_batch_count(std::span<const uint8_t> data) -> std::expected<int32_t, std::error_code> {
+    if (data.size() < 28) {
+        return std::unexpected(make_error_code(std::errc::message_size));
+    }
     ByteReader reader(data);
-    auto base_offset = reader.read_int64();      (void)base_offset;
-    auto batch_len = reader.read_int32();        (void)batch_len;
-    auto leader_epoch = reader.read_int32();     (void)leader_epoch;
+    auto base_offset = reader.read_int64();
+    (void)base_offset;
+    auto batch_len = reader.read_int32();
+    (void)batch_len;
+    auto leader_epoch = reader.read_int32();
+    (void)leader_epoch;
     auto magic = reader.read_int8();
-    if (!magic || *magic != 2) return std::unexpected(make_error_code(std::errc::protocol_not_supported));
-    auto crc = reader.read_int32();              (void)crc;
-    auto attrs = reader.read_int16();            (void)attrs;
+    if (!magic || *magic != 2) {
+        return std::unexpected(make_error_code(std::errc::protocol_not_supported));
+    }
+    auto crc = reader.read_int32();
+    (void)crc;
+    auto attrs = reader.read_int16();
+    (void)attrs;
     auto last_offset_delta = reader.read_int32();
-    if (!last_offset_delta) return std::unexpected(last_offset_delta.error());
+    if (!last_offset_delta) {
+        return std::unexpected(last_offset_delta.error());
+    }
     return *last_offset_delta + 1;
 }
 

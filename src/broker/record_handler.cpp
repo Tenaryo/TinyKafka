@@ -173,9 +173,9 @@ auto RecordHandler::get_or_create_context(const std::string& topic_name,
                                           int32_t partition) -> broker::PartitionContext& {
     auto key = topic_name + ":" + std::to_string(partition);
     std::lock_guard lock(*mutex_);
-    auto [it, inserted] =
-        partition_contexts_.try_emplace(key,
-                                        std::make_unique<broker::PartitionContext>(
-                                            log_root_, topic_name, partition, segment_bytes_, ring_));
+    auto [it, inserted] = partition_contexts_.try_emplace(
+        key,
+        std::make_unique<broker::PartitionContext>(
+            log_root_, topic_name, partition, segment_bytes_, ring_));
     return *it->second;
 }

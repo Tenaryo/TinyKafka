@@ -24,7 +24,7 @@ EpollReactor::EpollReactor(const config::Config& config, ClusterMetadata metadat
       broker_(std::move(metadata), config.log_root, config.segment_bytes),
       max_message_bytes_(config.max_message_bytes),
       max_write_buffer_bytes_(config.max_write_buffer_bytes),
-      last_metrics_log_(std::chrono::steady_clock::now()) {
+      last_metrics_log_(std::chrono::steady_clock::now()), ring_{} {
     ::io_uring_queue_init(64, &ring_, 0);
     if (epoll_fd_ < 0) [[unlikely]] {
         logging::error("epoll_create1 failed: " + std::to_string(errno));
@@ -249,7 +249,7 @@ void EpollReactor::handle_write(int fd) {
                 [[maybe_unused]] auto res = cqe->res;
                 ::io_uring_cqe_seen(&ring_, cqe);
                 metrics_.bytes_sent.fetch_add(static_cast<size_t>(res > 0 ? res : 0),
-                                               std::memory_order_relaxed);
+                                              std::memory_order_relaxed);
             }
             conn.splice_fd = -1;
             conn.splice_len = 0;
