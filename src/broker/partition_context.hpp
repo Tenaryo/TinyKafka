@@ -86,6 +86,7 @@ class PartitionContext {
         if (!file_) {
             return {};
         }
+        file_.flush();
 
         auto base_offset = next_offset_;
         current_segment_bytes_ += blob_size;
