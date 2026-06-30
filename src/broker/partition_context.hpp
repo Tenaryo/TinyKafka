@@ -62,9 +62,18 @@ class PartitionContext {
         size_t blob_size = record_batch_data.size();
 
         if (segment_bytes_ > 0 && current_segment_bytes_ + blob_size > segment_bytes_) {
+            file_.close();
             current_segment_base_offset_ = next_offset_;
             current_segment_bytes_ = 0;
             current_segment_index_.clear();
+        }
+
+        if (!file_.is_open()) {
+            auto path = log_.segment_path(current_segment_base_offset_);
+            file_.open(path, std::ios::binary | std::ios::app);
+            if (!file_) {
+                return {};
+            }
         }
 
         if (next_offset_ % kSparseIndexInterval == 0) {
@@ -72,15 +81,9 @@ class PartitionContext {
                 {.offset = next_offset_, .file_position = current_segment_bytes_});
         }
 
-        auto path = log_.segment_path(current_segment_base_offset_);
-        std::ofstream file(path, std::ios::binary | std::ios::app);
-        if (!file) {
-            return {};
-        }
-
-        file.write(reinterpret_cast<const char*>(record_batch_data.data()),
-                   static_cast<std::streamsize>(blob_size));
-        if (!file) {
+        file_.write(reinterpret_cast<const char*>(record_batch_data.data()),
+                    static_cast<std::streamsize>(blob_size));
+        if (!file_) {
             return {};
         }
 
@@ -194,6 +197,7 @@ class PartitionContext {
     size_t current_segment_bytes_{0};
     size_t segment_bytes_{0};
     std::vector<SparseIndexEntry> current_segment_index_;
+    std::ofstream file_;
     mutable std::mutex mutex_;
 };
 
