@@ -18,6 +18,11 @@ auto Server::create(std::uint16_t port) -> std::expected<Server, std::error_code
         return std::unexpected(std::error_code(errno, std::generic_category()));
     }
 
+    if (::setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &reuse, sizeof(reuse)) < 0) {
+        ::close(fd);
+        return std::unexpected(std::error_code(errno, std::generic_category()));
+    }
+
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = INADDR_ANY;

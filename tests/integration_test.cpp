@@ -134,7 +134,7 @@ class ServerProcess {
 
         if (pid_ == 0) {
             std::string arg = "--log.dirs=" + log_root_;
-            execl(bin_path.c_str(), bin_path.c_str(), arg.c_str(), nullptr);
+            execl(bin_path.c_str(), bin_path.c_str(), arg.c_str(), "--reactor.count=1", nullptr);
             _exit(127);
         }
     }

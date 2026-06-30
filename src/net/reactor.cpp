@@ -12,22 +12,47 @@
 
 #include "config/config.hpp"
 #include "logging/logger.hpp"
+#include "net/server.hpp"
 #include "net/socket.hpp"
 #include "protocol/parser.hpp"
+#include "protocol/request.hpp"
 #include "protocol/serializer.hpp"
 #include "util/endian.hpp"
+#include "util/overloaded.hpp"
 
 namespace net {
 
-EpollReactor::EpollReactor(const config::Config& config, ClusterMetadata metadata, int server_fd)
-    : epoll_fd_(::epoll_create1(EPOLL_CLOEXEC)), server_fd_(server_fd),
-      broker_(std::move(metadata), config.log_root, config.segment_bytes),
+WorkerReactor::WorkerReactor(const config::Config& config,
+                             const ClusterMetadata& metadata,
+                             GroupCoordinator& coordinator,
+                             const shard::ShardRouter& shard_router,
+                             std::vector<shard::CrossReactorQueues*>& all_queues,
+                             size_t reactor_id)
+    : epoll_fd_(::epoll_create1(EPOLL_CLOEXEC)), reactor_id_(reactor_id),
+      reactor_count_(shard_router.reactor_count()), metadata_(metadata),
+      shard_router_(shard_router), coordinator_(coordinator), all_queues_(all_queues),
+      broker_(metadata_,
+              config.log_root,
+              config.segment_bytes,
+              &ring_,
+              coordinator_,
+              partition_contexts_),
       max_message_bytes_(config.max_message_bytes),
       max_write_buffer_bytes_(config.max_write_buffer_bytes),
-      last_metrics_log_(std::chrono::steady_clock::now()), ring_{} {
-    ::io_uring_queue_init(64, &ring_, 0);
+      last_metrics_log_(std::chrono::steady_clock::now()) {
+    ::io_uring_queue_init(256, &ring_, 0);
+
+    auto server = Server::create(config.port);
+    if (!server) {
+        logging::error("WorkerReactor " + std::to_string(reactor_id_) +
+                       ": Failed to create server: " + server.error().message());
+        return;
+    }
+    server_fd_ = server->take_fd();
+
     if (epoll_fd_ < 0) [[unlikely]] {
-        logging::error("epoll_create1 failed: " + std::to_string(errno));
+        logging::error("WorkerReactor " + std::to_string(reactor_id_) +
+                       ": epoll_create1 failed: " + std::to_string(errno));
         return;
     }
 
@@ -35,14 +60,18 @@ EpollReactor::EpollReactor(const config::Config& config, ClusterMetadata metadat
     ev.events = EPOLLIN;
     ev.data.fd = server_fd_;
     if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, server_fd_, &ev) < 0) [[unlikely]] {
-        logging::error("epoll_ctl ADD server failed: " + std::to_string(errno));
+        logging::error("WorkerReactor " + std::to_string(reactor_id_) +
+                       ": epoll_ctl ADD server failed: " + std::to_string(errno));
     }
 }
 
-EpollReactor::~EpollReactor() {
+WorkerReactor::~WorkerReactor() {
     ::io_uring_queue_exit(&ring_);
     for (auto& [fd, _] : connections_) {
         ::close(fd);
+    }
+    for (auto& [_, ctx] : partition_contexts_) {
+        ctx.reset();
     }
     if (epoll_fd_ >= 0) {
         ::close(epoll_fd_);
@@ -52,22 +81,24 @@ EpollReactor::~EpollReactor() {
     }
 }
 
-void EpollReactor::run() {
-    std::array<epoll_event, 1024> events{};
-    logging::info("Reactor started");
-    while (true) {
-        int nfds = ::epoll_wait(epoll_fd_, events.data(), events.size(), -1);
+void WorkerReactor::run() {
+    std::array<epoll_event, kMaxEvents> events{};
+    logging::info("WorkerReactor " + std::to_string(reactor_id_) + " started");
+
+    while (running_) {
+        int nfds = ::epoll_wait(epoll_fd_, events.data(), events.size(), kEpollTimeoutMs);
         if (nfds < 0) [[unlikely]] {
             if (errno == EINTR) {
                 continue;
             }
-            logging::error("epoll_wait failed: " + std::to_string(errno));
+            logging::error("WorkerReactor " + std::to_string(reactor_id_) +
+                           ": epoll_wait failed: " + std::to_string(errno));
             break;
         }
 
         for (int i = 0; i < nfds; ++i) {
-            int fd = events.at(size_t(i)).data.fd;
-            uint32_t evts = events.at(size_t(i)).events;
+            int fd = events.at(static_cast<size_t>(i)).data.fd;
+            uint32_t evts = events.at(static_cast<size_t>(i)).events;
 
             if (fd == server_fd_) {
                 handle_accept();
@@ -84,24 +115,34 @@ void EpollReactor::run() {
             }
         }
 
+        drain_cross_reactor_requests();
+        drain_cross_reactor_responses();
+        harvest_io_completions();
+
         auto now = std::chrono::steady_clock::now();
         if (now - last_metrics_log_ >= kMetricsInterval) {
             log_metrics();
             last_metrics_log_ = now;
         }
     }
+
+    logging::info("WorkerReactor " + std::to_string(reactor_id_) + " stopped");
 }
 
-void EpollReactor::handle_accept() {
+void WorkerReactor::handle_accept() {
     int client_fd = ::accept(server_fd_, nullptr, nullptr);
     if (client_fd < 0) [[unlikely]] {
-        logging::error("accept failed: " + std::to_string(errno));
+        if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            logging::error("WorkerReactor " + std::to_string(reactor_id_) +
+                           ": accept failed: " + std::to_string(errno));
+        }
         return;
     }
 
     auto flags = ::fcntl(client_fd, F_GETFL, 0);
     if (flags < 0) [[unlikely]] {
-        logging::error("fcntl F_GETFL failed: " + std::to_string(errno));
+        logging::error("WorkerReactor " + std::to_string(reactor_id_) +
+                       ": fcntl F_GETFL failed: " + std::to_string(errno));
         ::close(client_fd);
         return;
     }
@@ -111,7 +152,8 @@ void EpollReactor::handle_accept() {
     ev.events = EPOLLIN;
     ev.data.fd = client_fd;
     if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, client_fd, &ev) < 0) [[unlikely]] {
-        logging::error("epoll_ctl ADD client failed: " + std::to_string(errno));
+        logging::error("WorkerReactor " + std::to_string(reactor_id_) +
+                       ": epoll_ctl ADD client failed: " + std::to_string(errno));
         ::close(client_fd);
         return;
     }
@@ -119,8 +161,59 @@ void EpollReactor::handle_accept() {
     connections_[client_fd] = Connection{};
 }
 
-void EpollReactor::handle_read(int fd) {
-    auto& conn = connections_[fd];
+namespace {
+
+struct PartitionKey {
+    std::string topic;
+    int32_t partition;
+};
+
+[[nodiscard]] auto lookup_topic_name(const ClusterMetadata& metadata,
+                                     const std::array<uint8_t, 16>& uuid) -> const std::string* {
+    auto it = metadata.uuid_to_topic.find(uuid);
+    if (it == metadata.uuid_to_topic.end()) {
+        return nullptr;
+    }
+    return &metadata.topics[it->second].name;
+}
+
+[[nodiscard]] auto extract_partition_key(const Request& req, const ClusterMetadata& metadata)
+    -> std::optional<PartitionKey> {
+    return std::visit(
+        Overloaded{
+            [](const ProduceRequest& r) -> std::optional<PartitionKey> {
+                if (!r.topics.empty() && !r.topics[0].partitions.empty()) {
+                    return PartitionKey{r.topics[0].topic_name,
+                                        r.topics[0].partitions[0].partition_index};
+                }
+                return std::nullopt;
+            },
+            [&metadata](const FetchRequest& r) -> std::optional<PartitionKey> {
+                if (!r.topics.empty() && !r.topics[0].partitions.empty()) {
+                    const auto* name = lookup_topic_name(metadata, r.topics[0].topic_id);
+                    if (name != nullptr) {
+                        return PartitionKey{*name, r.topics[0].partitions[0].partition_index};
+                    }
+                }
+                return std::nullopt;
+            },
+            [](const ListOffsetsRequest& r) -> std::optional<PartitionKey> {
+                if (!r.topics.empty() && !r.topics[0].partitions.empty()) {
+                    return PartitionKey{r.topics[0].topic_name,
+                                        r.topics[0].partitions[0].partition_index};
+                }
+                return std::nullopt;
+            },
+            [](const auto&) -> std::optional<PartitionKey> { return std::nullopt; },
+        },
+        req);
+}
+
+} // namespace
+
+void WorkerReactor::handle_read(int fd) {
+    auto* conn_it = &connections_[fd];
+    auto& conn = *conn_it;
 
     while (true) {
         if (!conn.have_header) {
@@ -178,6 +271,25 @@ void EpollReactor::handle_read(int fd) {
             return;
         }
 
+        auto partition_key = extract_partition_key(*req, metadata_);
+        if (partition_key.has_value()) {
+            size_t target = shard_router_.route(partition_key->topic, partition_key->partition);
+            if (target != reactor_id_) {
+                shard::ForwardedRequest fwd;
+                fwd.client_fd = fd;
+                fwd.source_reactor_id = reactor_id_;
+                fwd.request = std::move(*req);
+                all_queues_[target]->push_request(std::move(fwd));
+
+                metrics_.requests_total.fetch_add(1, std::memory_order_relaxed);
+                metrics_.bytes_received.fetch_add(total_needed, std::memory_order_relaxed);
+
+                conn.have_header = false;
+                conn.read_buf.clear();
+                continue;
+            }
+        }
+
         auto resp = broker_.handle(*req);
         auto& resp_buf = conn.resp_pool;
         resp_buf = serialize(resp);
@@ -224,7 +336,7 @@ void EpollReactor::handle_read(int fd) {
     }
 }
 
-void EpollReactor::handle_write(int fd) {
+void WorkerReactor::handle_write(int fd) {
     auto& conn = connections_[fd];
     auto remaining = std::span{conn.write_buf}.subspan(conn.write_offset);
     auto result = send_all(fd, remaining);
@@ -239,52 +351,152 @@ void EpollReactor::handle_write(int fd) {
     }
 
     if (conn.write_offset >= conn.write_buf.size()) {
-        if (conn.splice_fd >= 0) {
+        if (conn.splice_fd >= 0 && !conn.splice_pending) {
             ::io_uring_sqe* sqe = ::io_uring_get_sqe(&ring_);
-            if (sqe) {
+            if (sqe != nullptr) [[likely]] {
                 ::io_uring_prep_splice(sqe, conn.splice_fd, 0, fd, -1, conn.splice_len, 0);
+                ::io_uring_sqe_set_data(
+                    sqe,
+                    reinterpret_cast<void*>( // NOLINT(performance-no-int-to-ptr)
+                        static_cast<uintptr_t>(fd) << 1));
                 ::io_uring_submit(&ring_);
-                ::io_uring_cqe* cqe = nullptr;
-                ::io_uring_wait_cqe(&ring_, &cqe);
-                [[maybe_unused]] auto res = cqe->res;
-                ::io_uring_cqe_seen(&ring_, cqe);
-                metrics_.bytes_sent.fetch_add(static_cast<size_t>(res > 0 ? res : 0),
-                                              std::memory_order_relaxed);
+                conn.splice_pending = true;
+                conn.splice_fd = -1;
+                conn.splice_len = 0;
+                return;
             }
-            conn.splice_fd = -1;
-            conn.splice_len = 0;
         }
-        if (!conn.write_queue_.empty()) {
-            conn.write_buf = std::move(conn.write_queue_.front());
-            conn.write_queue_.pop_front();
-            conn.write_offset = 0;
-        } else {
-            conn.write_buf.clear();
-            conn.write_offset = 0;
-
-            epoll_event ev{};
-            ev.events = EPOLLIN;
-            ev.data.fd = fd;
-            ::epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fd, &ev);
+        if (!conn.splice_pending) {
+            advance_write_queue(fd);
         }
     }
 }
 
-void EpollReactor::close_connection(int fd) {
+void WorkerReactor::advance_write_queue(int fd) {
+    auto& conn = connections_[fd];
+    if (!conn.write_queue_.empty()) {
+        conn.write_buf = std::move(conn.write_queue_.front());
+        conn.write_queue_.pop_front();
+        conn.write_offset = 0;
+    } else {
+        conn.write_buf.clear();
+        conn.write_offset = 0;
+
+        epoll_event ev{};
+        ev.events = EPOLLIN;
+        ev.data.fd = fd;
+        ::epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fd, &ev);
+    }
+}
+
+void WorkerReactor::close_connection(int fd) {
     ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
     ::close(fd);
     connections_.erase(fd);
 }
 
-auto EpollReactor::snapshot() const -> broker::BrokerMetrics::Snapshot {
-    return metrics_.snapshot();
+void WorkerReactor::drain_cross_reactor_requests() {
+    shard::ForwardedRequest fwd;
+    while (own_queues_.try_pop_request(fwd)) {
+        auto resp = broker_.handle(fwd.request);
+        auto serialized = serialize(resp);
+
+        int splice_fd = -1;
+        unsigned splice_len = 0;
+        if (auto* fetch_resp = std::get_if<FetchResponse>(&resp)) {
+            for (auto& tr : fetch_resp->responses) {
+                for (auto& pr : tr.partitions) {
+                    if (pr.splice_fd >= 0) {
+                        splice_fd = pr.splice_fd;
+                        splice_len = static_cast<unsigned int>(pr.splice_len);
+                    }
+                }
+            }
+        }
+
+        shard::ForwardedResponse fwd_resp;
+        fwd_resp.client_fd = fwd.client_fd;
+        fwd_resp.data = std::move(serialized);
+        fwd_resp.splice_fd = splice_fd;
+        fwd_resp.splice_len = splice_len;
+
+        all_queues_[fwd.source_reactor_id]->push_response(std::move(fwd_resp));
+    }
 }
 
-void EpollReactor::log_metrics() {
+void WorkerReactor::drain_cross_reactor_responses() {
+    shard::ForwardedResponse fwd_resp;
+    while (own_queues_.try_pop_response(fwd_resp)) {
+        auto it = connections_.find(fwd_resp.client_fd);
+        if (it == connections_.end()) {
+            continue;
+        }
+        auto& conn = it->second;
+
+        if (fwd_resp.splice_fd >= 0) {
+            conn.splice_fd = fwd_resp.splice_fd;
+            conn.splice_len = fwd_resp.splice_len;
+        }
+
+        bool was_idle = !conn.write_offset && conn.write_buf.empty();
+        if (was_idle) {
+            conn.write_buf = std::move(fwd_resp.data);
+            conn.write_offset = 0;
+        } else {
+            conn.write_queue_.push_back(std::move(fwd_resp.data));
+        }
+
+        if (was_idle) {
+            epoll_event ev{};
+            ev.events = EPOLLIN | EPOLLOUT;
+            ev.data.fd = fwd_resp.client_fd;
+            ::epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fwd_resp.client_fd, &ev);
+        }
+    }
+}
+
+void WorkerReactor::harvest_io_completions() {
+    ::io_uring_cqe* cqe = nullptr;
+    while (::io_uring_peek_cqe(&ring_, &cqe) == 0) {
+        auto user_data = reinterpret_cast<uintptr_t>(::io_uring_cqe_get_data(cqe));
+
+        if (user_data == 0) {
+            if (cqe->res < 0) [[unlikely]] {
+                metrics_.errors_total.fetch_add(1, std::memory_order_relaxed);
+            }
+        } else if ((user_data & 1) != 0) {
+            delete reinterpret_cast<std::vector<uint8_t>*>( // NOLINT(performance-no-int-to-ptr)
+                user_data & ~static_cast<uintptr_t>(1));
+            if (cqe->res < 0) [[unlikely]] {
+                metrics_.errors_total.fetch_add(1, std::memory_order_relaxed);
+            }
+        } else {
+            int fd = static_cast<int>(user_data >> 1);
+            auto it = connections_.find(fd);
+            if (it != connections_.end()) {
+                auto& conn = it->second;
+                if (cqe->res >= 0) {
+                    metrics_.bytes_sent.fetch_add(static_cast<size_t>(cqe->res),
+                                                  std::memory_order_relaxed);
+                } else {
+                    metrics_.errors_total.fetch_add(1, std::memory_order_relaxed);
+                }
+                conn.splice_pending = false;
+                advance_write_queue(fd);
+            }
+        }
+
+        ::io_uring_cqe_seen(&ring_, cqe);
+        cqe = nullptr;
+    }
+}
+
+void WorkerReactor::log_metrics() {
     auto s = metrics_.snapshot();
     logging::info(
-        std::format("metrics: requests_total={} bytes_received={} bytes_sent={} errors_total={} "
-                    "active_connections={}",
+        std::format("WorkerReactor {} metrics: requests_total={} bytes_received={} bytes_sent={} "
+                    "errors_total={} active_connections={}",
+                    reactor_id_,
                     s.requests_total,
                     s.bytes_received,
                     s.bytes_sent,

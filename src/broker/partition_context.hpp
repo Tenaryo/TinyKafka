@@ -6,7 +6,6 @@
 #include <filesystem>
 #include <format>
 #include <liburing.h>
-#include <mutex>
 #include <span>
 #include <string>
 #include <utility>
@@ -41,8 +40,6 @@ class PartitionContext {
           log_(log_root_, topic_name_, partition_), segment_bytes_(segment_bytes), ring_(ring) {}
 
     [[nodiscard]] auto produce(std::span<const uint8_t> record_batch_data) -> ProduceResult {
-        std::lock_guard lock(mutex_);
-
         auto count_result = util::record_batch_count(record_batch_data);
         if (!count_result) {
             return {};
@@ -67,6 +64,10 @@ class PartitionContext {
                 ::close(write_fd_);
                 write_fd_ = -1;
             }
+            if (read_fd_ >= 0) {
+                ::close(read_fd_);
+                read_fd_ = -1;
+            }
             current_segment_base_offset_ = next_offset_;
             current_segment_bytes_ = 0;
             current_segment_index_.clear();
@@ -86,22 +87,21 @@ class PartitionContext {
                 {.offset = next_offset_, .file_position = current_segment_bytes_});
         }
 
-        if (ring_) {
+        if (ring_ != nullptr) {
+            auto* copy =
+                new std::vector<uint8_t>(record_batch_data.begin(), record_batch_data.end());
             io_uring_sqe* sqe = io_uring_get_sqe(ring_);
-            if (sqe) {
-                io_uring_prep_write(sqe,
-                                    write_fd_,
-                                    record_batch_data.data(),
-                                    static_cast<unsigned int>(blob_size),
-                                    0);
+            if (sqe != nullptr) [[likely]] {
+                io_uring_prep_write(
+                    sqe, write_fd_, copy->data(), static_cast<unsigned int>(copy->size()), 0);
+                io_uring_sqe_set_data(sqe,
+                                      reinterpret_cast<void*>( // NOLINT(performance-no-int-to-ptr)
+                                          reinterpret_cast<uintptr_t>(copy) | 1));
                 io_uring_submit(ring_);
-                io_uring_cqe* cqe = nullptr;
-                io_uring_wait_cqe(ring_, &cqe);
-                if (cqe->res < 0) {
-                    io_uring_cqe_seen(ring_, cqe);
-                    return {};
-                }
-                io_uring_cqe_seen(ring_, cqe);
+            } else {
+                ssize_t w [[maybe_unused]] =
+                    ::write(write_fd_, record_batch_data.data(), blob_size);
+                delete copy;
             }
         } else {
             ssize_t w [[maybe_unused]] = ::write(write_fd_, record_batch_data.data(), blob_size);
@@ -114,13 +114,10 @@ class PartitionContext {
     }
 
     [[nodiscard]] auto fetch() -> std::vector<uint8_t> {
-        std::lock_guard lock(mutex_);
         return storage::read_topic_log(log_root_, topic_name_, partition_);
     }
 
     [[nodiscard]] auto fetch(int64_t offset, int32_t max_bytes) -> std::vector<uint8_t> {
-        std::lock_guard lock(mutex_);
-
         if (max_bytes <= 0) {
             return {};
         }
@@ -140,15 +137,10 @@ class PartitionContext {
         int64_t entry_offset = best ? best->offset : 0;
         int64_t segment_base = best ? current_segment_base_offset_ : 0;
 
-        auto path = log_.segment_path(segment_base);
-        int fd = ::open(path.c_str(), O_RDONLY); // NOLINT(cppcoreguidelines-pro-type-vararg)
-        if (fd < 0) {
-            return {};
-        }
+        ensure_read_fd(segment_base);
 
-        auto file_size = static_cast<size_t>(::lseek(fd, 0, SEEK_END));
+        auto file_size = static_cast<size_t>(::lseek(read_fd_, 0, SEEK_END));
         if (file_size <= 0) {
-            ::close(fd);
             return {};
         }
 
@@ -160,13 +152,12 @@ class PartitionContext {
         size_t available = file_size - start_position;
         size_t read_size = std::min(read_limit, available);
         if (read_size == 0) {
-            ::close(fd);
             return {};
         }
 
         std::vector<uint8_t> raw_data(read_size);
-        auto actual = ::pread(fd, raw_data.data(), read_size, static_cast<off_t>(start_position));
-        ::close(fd);
+        auto actual =
+            ::pread(read_fd_, raw_data.data(), read_size, static_cast<off_t>(start_position));
         if (actual < 0) {
             return {};
         }
@@ -198,23 +189,17 @@ class PartitionContext {
         return result;
     }
 
-    [[nodiscard]] auto current_offset() const -> int64_t {
-        std::lock_guard lock(mutex_);
-        return next_offset_;
-    }
+    [[nodiscard]] auto current_offset() const -> int64_t { return next_offset_; }
 
     [[nodiscard]] auto segment_index() const -> std::vector<SparseIndexEntry> {
-        std::lock_guard lock(mutex_);
         return current_segment_index_;
     }
 
     [[nodiscard]] auto file_fd() -> int {
-        if (splice_fd_ < 0 && write_fd_ >= 0) {
-            auto path = log_.segment_path(current_segment_base_offset_);
-            splice_fd_ =
-                ::open(path.c_str(), O_RDONLY); // NOLINT(cppcoreguidelines-pro-type-vararg)
+        if (read_fd_ < 0) {
+            ensure_read_fd(current_segment_base_offset_);
         }
-        return splice_fd_;
+        return read_fd_;
     }
 
     struct SpliceInfo {
@@ -224,7 +209,6 @@ class PartitionContext {
     };
 
     [[nodiscard]] auto splice_info(int64_t fetch_offset, int32_t max_bytes) -> SpliceInfo {
-        std::lock_guard lock(mutex_);
         auto fd = write_fd_ >= 0 ? write_fd_ : -1;
         if (fd < 0) {
             return {};
@@ -253,6 +237,15 @@ class PartitionContext {
         return current_segment_base_offset_;
     }
   private:
+    void ensure_read_fd(int64_t segment_base) {
+        if (read_fd_ >= 0) {
+            return;
+        }
+        auto path = log_.segment_path(segment_base);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+        read_fd_ = ::open(path.c_str(), O_RDONLY);
+    }
+
     std::string log_root_;
     std::string topic_name_;
     int32_t partition_;
@@ -264,8 +257,7 @@ class PartitionContext {
     std::vector<SparseIndexEntry> current_segment_index_;
     io_uring* ring_{nullptr};
     int write_fd_{-1};
-    int splice_fd_{-1};
-    mutable std::mutex mutex_;
+    int read_fd_{-1};
 };
 
 } // namespace broker

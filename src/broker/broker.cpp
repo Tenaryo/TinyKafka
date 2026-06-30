@@ -13,22 +13,22 @@ auto Broker::handle(const Request& req) -> Response {
                 return GroupCoordinator::handle_find_coordinator(r);
             },
             [this](const OffsetCommitRequest& r) -> Response {
-                return coordinator_.handle_offset_commit(r);
+                return coordinator_->handle_offset_commit(r);
             },
             [this](const OffsetFetchRequest& r) -> Response {
-                return coordinator_.handle_offset_fetch(r);
+                return coordinator_->handle_offset_fetch(r);
             },
             [this](const JoinGroupRequest& r) -> Response {
-                return coordinator_.handle_join_group(r);
+                return coordinator_->handle_join_group(r);
             },
             [this](const HeartbeatRequest& r) -> Response {
-                return coordinator_.handle_heartbeat(r);
+                return coordinator_->handle_heartbeat(r);
             },
             [this](const LeaveGroupRequest& r) -> Response {
-                return coordinator_.handle_leave_group(r);
+                return coordinator_->handle_leave_group(r);
             },
             [this](const SyncGroupRequest& r) -> Response {
-                return coordinator_.handle_sync_group(r);
+                return coordinator_->handle_sync_group(r);
             },
             [this](const MetadataRequest& r) -> Response {
                 return metadata_handler_.handle_metadata(r);

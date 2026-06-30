@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <unordered_map>
 
@@ -16,25 +15,22 @@
 
 class Broker {
   public:
-    explicit Broker(ClusterMetadata metadata = {},
-                    std::string log_root = {},
-                    size_t segment_bytes = 0,
-                    io_uring* ring = nullptr)
-        : metadata_(std::move(metadata)), log_root_(std::move(log_root)),
-          metadata_handler_(metadata_), record_handler_(contexts_mutex_,
-                                                        partition_contexts_,
-                                                        metadata_,
-                                                        log_root_,
-                                                        segment_bytes,
-                                                        ring) {}
+    explicit Broker(const ClusterMetadata& metadata,
+                    std::string log_root,
+                    size_t segment_bytes,
+                    io_uring* ring,
+                    GroupCoordinator& coordinator,
+                    std::unordered_map<std::string, std::unique_ptr<broker::PartitionContext>>&
+                        partition_contexts)
+        : metadata_(metadata), log_root_(std::move(log_root)), metadata_handler_(metadata_),
+          record_handler_(partition_contexts, metadata_, log_root_, segment_bytes, ring),
+          coordinator_(&coordinator) {}
 
     auto handle(const Request& req) -> Response;
   private:
-    ClusterMetadata metadata_;
+    const ClusterMetadata& metadata_; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
     std::string log_root_;
-    std::mutex contexts_mutex_;
-    std::unordered_map<std::string, std::unique_ptr<broker::PartitionContext>> partition_contexts_;
     MetadataHandler metadata_handler_;
     RecordHandler record_handler_;
-    GroupCoordinator coordinator_;
+    GroupCoordinator* coordinator_;
 };

@@ -8,6 +8,7 @@ set(TEST_SOURCES
     logging/logger_test.cpp
     protocol/parser_test.cpp
     protocol/serializer_test.cpp
+    shard/shard_test.cpp
 )
 
 foreach(TEST_FILE ${TEST_SOURCES})

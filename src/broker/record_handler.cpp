@@ -172,7 +172,6 @@ auto RecordHandler::find_topic_by_uuid(const std::array<std::uint8_t, 16>& id) c
 auto RecordHandler::get_or_create_context(const std::string& topic_name,
                                           int32_t partition) -> broker::PartitionContext& {
     auto key = topic_name + ":" + std::to_string(partition);
-    std::lock_guard lock(*mutex_);
     auto [it, inserted] = partition_contexts_.try_emplace(
         key,
         std::make_unique<broker::PartitionContext>(

@@ -12,6 +12,7 @@ struct Config {
     uint32_t max_message_bytes = 1'048'576;
     size_t max_write_buffer_bytes = 4'194'304;
     size_t segment_bytes = 1'073'741'824;
+    size_t reactor_count = 0;
 
     [[nodiscard]] static auto
     load(int argc, char** argv, std::string_view config_path = "config.properties") -> Config;

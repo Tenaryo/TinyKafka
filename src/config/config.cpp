@@ -5,6 +5,7 @@
 #include "logging/logger.hpp"
 #include <charconv>
 #include <string_view>
+#include <thread>
 
 namespace config {
 
@@ -65,6 +66,11 @@ void apply_config_key(Config& config, std::string_view key, std::string_view val
             logging::warn("invalid segment.bytes value: " + std::string(value) +
                           ", using default " + std::to_string(config.segment_bytes));
         }
+    } else if (key == "reactor.count") {
+        auto parsed = parse_int<size_t>(value);
+        if (parsed != 0) {
+            config.reactor_count = parsed;
+        }
     }
 }
 
@@ -72,6 +78,12 @@ void apply_config_key(Config& config, std::string_view key, std::string_view val
 
 auto Config::load(int argc, char** argv, std::string_view config_path) -> Config {
     Config config;
+    if (config.reactor_count == 0) {
+        config.reactor_count = std::thread::hardware_concurrency();
+    }
+    if (config.reactor_count == 0) {
+        config.reactor_count = 1;
+    }
 
     if (!config_path.empty()) {
         auto props = load_properties(config_path);
