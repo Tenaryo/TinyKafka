@@ -6,8 +6,8 @@
 auto Broker::handle(const Request& req) -> Response {
     return std::visit(
         Overloaded{
-            [this](const ApiVersionsRequest& r) -> Response {
-                return metadata_handler_.handle_api_versions(r);
+            [](const ApiVersionsRequest& r) -> Response {
+                return MetadataHandler::handle_api_versions(r);
             },
             [](const FindCoordinatorRequest& r) -> Response {
                 return GroupCoordinator::handle_find_coordinator(r);

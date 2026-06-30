@@ -110,7 +110,7 @@ jobs:
             --directory build/coverage \
             --output-file build/coverage/coverage_raw.info \
             --gcov-tool gcov-14 \
-            --ignore-errors mismatch
+            --ignore-errors mismatch,negative
           lcov --remove build/coverage/coverage_raw.info \
             '/usr/*' \
             '*/_deps/*' \
