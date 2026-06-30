@@ -119,9 +119,6 @@ void EpollReactor::handle_accept() {
 
 void EpollReactor::handle_read(int fd) {
     auto& conn = connections_[fd];
-    if (conn.write_pending) {
-        return;
-    }
 
     while (true) {
         if (!conn.have_header) {
@@ -180,10 +177,10 @@ void EpollReactor::handle_read(int fd) {
         }
 
         auto resp = broker_.handle(*req);
-        conn.write_buf = serialize(resp);
-        if (conn.write_buf.size() > max_write_buffer_bytes_) [[unlikely]] {
+        std::vector<uint8_t> resp_buf = serialize(resp);
+        if (resp_buf.size() > max_write_buffer_bytes_) [[unlikely]] {
             logging::error("Response exceeds max_write_buffer_bytes (fd=" + std::to_string(fd) +
-                           ", size=" + std::to_string(conn.write_buf.size()) + ")");
+                           ", size=" + std::to_string(resp_buf.size()) + ")");
             metrics_.errors_total.fetch_add(1, std::memory_order_relaxed);
             close_connection(fd);
             return;
@@ -191,15 +188,23 @@ void EpollReactor::handle_read(int fd) {
 
         metrics_.requests_total.fetch_add(1, std::memory_order_relaxed);
         metrics_.bytes_received.fetch_add(total_needed, std::memory_order_relaxed);
-        conn.write_offset = 0;
-        conn.write_pending = true;
+
+        bool was_idle = !conn.write_offset && conn.write_buf.empty();
+        if (was_idle) {
+            conn.write_buf = std::move(resp_buf);
+            conn.write_offset = 0;
+        } else {
+            conn.write_queue_.push_back(std::move(resp_buf));
+        }
         conn.have_header = false;
         conn.read_buf.clear();
 
-        epoll_event ev{};
-        ev.events = EPOLLIN | EPOLLOUT;
-        ev.data.fd = fd;
-        ::epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fd, &ev);
+        if (was_idle) {
+            epoll_event ev{};
+            ev.events = EPOLLIN | EPOLLOUT;
+            ev.data.fd = fd;
+            ::epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fd, &ev);
+        }
         return;
     }
 }
@@ -219,14 +224,19 @@ void EpollReactor::handle_write(int fd) {
     }
 
     if (conn.write_offset >= conn.write_buf.size()) {
-        conn.write_buf.clear();
-        conn.write_offset = 0;
-        conn.write_pending = false;
+        if (!conn.write_queue_.empty()) {
+            conn.write_buf = std::move(conn.write_queue_.front());
+            conn.write_queue_.pop_front();
+            conn.write_offset = 0;
+        } else {
+            conn.write_buf.clear();
+            conn.write_offset = 0;
 
-        epoll_event ev{};
-        ev.events = EPOLLIN;
-        ev.data.fd = fd;
-        ::epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fd, &ev);
+            epoll_event ev{};
+            ev.events = EPOLLIN;
+            ev.data.fd = fd;
+            ::epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fd, &ev);
+        }
     }
 }
 

@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <deque>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -38,7 +39,7 @@ class EpollReactor {
         bool have_header = false;
         std::vector<uint8_t> write_buf;
         size_t write_offset = 0;
-        bool write_pending = false;
+        std::deque<std::vector<uint8_t>> write_queue_;
     };
 
     void handle_accept();
