@@ -92,7 +92,10 @@ class PartitionContext {
                                                         static_cast<unsigned int>(blob_size), 0);
             if (res < 0) co_return ProduceResult{};
         } else {
-            ::write(write_fd_, record_batch_data.data(), blob_size);
+            ssize_t w = ::write(write_fd_, record_batch_data.data(), blob_size);
+            if (w < 0) {
+                co_return ProduceResult{};
+            }
         }
 
         auto base_offset = next_offset_;
