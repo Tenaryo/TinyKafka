@@ -3,7 +3,6 @@
 #include <array>
 #include <cerrno>
 #include <chrono>
-#include <coroutine>
 #include <format>
 
 #include <fcntl.h>
@@ -13,7 +12,6 @@
 
 #include "config/config.hpp"
 #include "logging/logger.hpp"
-#include "net/io_awaiter.hpp"
 #include "net/socket.hpp"
 #include "protocol/parser.hpp"
 #include "protocol/serializer.hpp"
@@ -23,7 +21,7 @@ namespace net {
 
 EpollReactor::EpollReactor(const config::Config& config, ClusterMetadata metadata, int server_fd)
     : epoll_fd_(::epoll_create1(EPOLL_CLOEXEC)), server_fd_(server_fd),
-      broker_(std::move(metadata), config.log_root, config.segment_bytes, &ring_),
+      broker_(std::move(metadata), config.log_root, config.segment_bytes),
       max_message_bytes_(config.max_message_bytes),
       max_write_buffer_bytes_(config.max_write_buffer_bytes),
       last_metrics_log_(std::chrono::steady_clock::now()) {
@@ -39,22 +37,11 @@ EpollReactor::EpollReactor(const config::Config& config, ClusterMetadata metadat
     if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, server_fd_, &ev) < 0) [[unlikely]] {
         logging::error("epoll_ctl ADD server failed: " + std::to_string(errno));
     }
-
-    epoll_event uring_ev{};
-    uring_ev.events = EPOLLIN;
-    uring_ev.data.fd = ring_.ring_fd;
-    if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, ring_.ring_fd, &uring_ev) < 0) [[unlikely]] {
-        logging::error("epoll_ctl ADD uring failed: " + std::to_string(errno));
-    }
 }
 
 EpollReactor::~EpollReactor() {
     ::io_uring_queue_exit(&ring_);
-    for (auto& [fd, conn] : connections_) {
-        if (conn.pending_coro) {
-            conn.pending_coro.destroy();
-            conn.pending_coro = nullptr;
-        }
+    for (auto& [fd, _] : connections_) {
         ::close(fd);
     }
     if (epoll_fd_ >= 0) {
@@ -82,51 +69,18 @@ void EpollReactor::run() {
             int fd = events.at(size_t(i)).data.fd;
             uint32_t evts = events.at(size_t(i)).events;
 
-            if (fd == ring_.ring_fd) {
-                continue;
-            }
             if (fd == server_fd_) {
                 handle_accept();
             } else if ((evts & (EPOLLERR | EPOLLHUP)) != 0) {
                 metrics_.errors_total.fetch_add(1, std::memory_order_relaxed);
                 close_connection(fd);
             } else {
-                auto& conn = connections_[fd];
-                if (conn.pending_coro && conn.pending_coro.done()) {
-                    auto it = coro_addr_to_fd_.find(conn.pending_coro.address());
-                    if (it != coro_addr_to_fd_.end()) {
-                        coro_addr_to_fd_.erase(it);
-                    }
-                    conn.pending_coro.destroy();
-                    conn.pending_coro = nullptr;
-                }
                 if ((evts & EPOLLIN) != 0) {
-                    if (!conn.pending_coro) {
-                        net::Task<void> t = handle_read(fd);
-                        auto h = t.take_handle();
-                        if (h && h.done()) {
-                            h.destroy();
-                        } else if (h) {
-                            conn.pending_coro = h;
-                            coro_addr_to_fd_[h.address()] = fd;
-                        }
-                    }
+                    handle_read(fd);
                 }
                 if ((evts & EPOLLOUT) != 0) {
                     handle_write(fd);
                 }
-            }
-        }
-
-        io_uring_cqe* cqe = nullptr;
-        while (::io_uring_peek_cqe(&ring_, &cqe) == 0) {
-            if (cqe) {
-                auto* awaiter = static_cast<UringWriteAwaiter*>(io_uring_cqe_get_data(cqe));
-                if (awaiter) {
-                    awaiter->set_result(cqe->res);
-                    awaiter->resume_continuation();
-                }
-                ::io_uring_cqe_seen(&ring_, cqe);
             }
         }
 
@@ -165,107 +119,109 @@ void EpollReactor::handle_accept() {
     connections_[client_fd] = Connection{};
 }
 
-net::Task<void> EpollReactor::handle_read(int fd) {
+void EpollReactor::handle_read(int fd) {
     auto& conn = connections_[fd];
 
-    if (!conn.have_header) {
-        if (conn.read_buf.size() < 4) {
+    while (true) {
+        if (!conn.have_header) {
+            if (conn.read_buf.size() < 4) {
+                size_t old_size = conn.read_buf.size();
+                conn.read_buf.resize(4);
+                auto result = recv_all(fd, std::span{conn.read_buf}.subspan(old_size));
+                conn.read_buf.resize(old_size + (result ? *result : 0));
+                if (!result) {
+                    break;
+                }
+                if (*result == 0) {
+                    close_connection(fd);
+                    return;
+                }
+                if (conn.read_buf.size() < 4) {
+                    break;
+                }
+            }
+            conn.expected_len = static_cast<size_t>(
+                decode_int32_be(std::span<const uint8_t, 4>{conn.read_buf.data(), 4}));
+            if (conn.expected_len > max_message_bytes_) {
+                logging::error("Message too large: " + std::to_string(conn.expected_len));
+                metrics_.errors_total.fetch_add(1, std::memory_order_relaxed);
+                close_connection(fd);
+                return;
+            }
+            conn.have_header = true;
+        }
+
+        size_t total_needed = 4 + conn.expected_len;
+        if (conn.read_buf.size() < total_needed) {
             size_t old_size = conn.read_buf.size();
-            conn.read_buf.resize(4);
+            conn.read_buf.resize(total_needed);
             auto result = recv_all(fd, std::span{conn.read_buf}.subspan(old_size));
             conn.read_buf.resize(old_size + (result ? *result : 0));
             if (!result) {
-                co_return;
+                break;
             }
             if (*result == 0) {
                 close_connection(fd);
-                co_return;
+                return;
             }
-            if (conn.read_buf.size() < 4) {
-                co_return;
+            if (conn.read_buf.size() < total_needed) {
+                break;
             }
         }
-        conn.expected_len = static_cast<size_t>(
-            decode_int32_be(std::span<const uint8_t, 4>{conn.read_buf.data(), 4}));
-        if (conn.expected_len > max_message_bytes_) {
-            logging::error("Message too large: " + std::to_string(conn.expected_len));
+
+        auto body_span = std::span{conn.read_buf}.subspan(4);
+        auto req = parse_request(body_span);
+        if (!req) {
+            logging::error("Parse failed: " + req.error().message());
             metrics_.errors_total.fetch_add(1, std::memory_order_relaxed);
             close_connection(fd);
-            co_return;
+            return;
         }
-        conn.have_header = true;
-    }
 
-    size_t total_needed = 4 + conn.expected_len;
-    if (conn.read_buf.size() < total_needed) {
-        size_t old_size = conn.read_buf.size();
-        conn.read_buf.resize(total_needed);
-        auto result = recv_all(fd, std::span{conn.read_buf}.subspan(old_size));
-        conn.read_buf.resize(old_size + (result ? *result : 0));
-        if (!result) {
-            co_return;
-        }
-        if (*result == 0) {
-            close_connection(fd);
-            co_return;
-        }
-        if (conn.read_buf.size() < total_needed) {
-            co_return;
-        }
-    }
+        auto resp = broker_.handle(*req);
+        auto& resp_buf = conn.resp_pool;
+        resp_buf = serialize(resp);
 
-    auto body_span = std::span{conn.read_buf}.subspan(4);
-    auto req = parse_request(body_span);
-    if (!req) {
-        logging::error("Parse failed: " + req.error().message());
-        metrics_.errors_total.fetch_add(1, std::memory_order_relaxed);
-        close_connection(fd);
-        co_return;
-    }
-
-    auto resp = co_await broker_.handle(*req);
-    auto& resp_buf = conn.resp_pool;
-    resp_buf = serialize(resp);
-
-    if (auto* fetch_resp = std::get_if<FetchResponse>(&resp)) {
-        for (auto& tr : fetch_resp->responses) {
-            for (auto& pr : tr.partitions) {
-                if (pr.splice_fd >= 0) {
-                    conn.splice_fd = pr.splice_fd;
-                    conn.splice_len = static_cast<unsigned int>(pr.splice_len);
+        if (auto* fetch_resp = std::get_if<FetchResponse>(&resp)) {
+            for (auto& tr : fetch_resp->responses) {
+                for (auto& pr : tr.partitions) {
+                    if (pr.splice_fd >= 0) {
+                        conn.splice_fd = pr.splice_fd;
+                        conn.splice_len = static_cast<unsigned int>(pr.splice_len);
+                    }
                 }
             }
         }
-    }
 
-    if (resp_buf.size() > max_write_buffer_bytes_) [[unlikely]] {
-        logging::error("Response exceeds max_write_buffer_bytes (fd=" + std::to_string(fd) +
-                       ", size=" + std::to_string(resp_buf.size()) + ")");
-        metrics_.errors_total.fetch_add(1, std::memory_order_relaxed);
-        close_connection(fd);
-        co_return;
-    }
+        if (resp_buf.size() > max_write_buffer_bytes_) [[unlikely]] {
+            logging::error("Response exceeds max_write_buffer_bytes (fd=" + std::to_string(fd) +
+                           ", size=" + std::to_string(resp_buf.size()) + ")");
+            metrics_.errors_total.fetch_add(1, std::memory_order_relaxed);
+            close_connection(fd);
+            return;
+        }
 
-    metrics_.requests_total.fetch_add(1, std::memory_order_relaxed);
-    metrics_.bytes_received.fetch_add(total_needed, std::memory_order_relaxed);
+        metrics_.requests_total.fetch_add(1, std::memory_order_relaxed);
+        metrics_.bytes_received.fetch_add(total_needed, std::memory_order_relaxed);
 
-    bool was_idle = !conn.write_offset && conn.write_buf.empty();
-    if (was_idle) {
-        conn.write_buf = std::move(resp_buf);
-        conn.write_offset = 0;
-    } else {
-        conn.write_queue_.push_back(std::move(resp_buf));
-    }
-    conn.have_header = false;
-    conn.read_buf.clear();
+        bool was_idle = !conn.write_offset && conn.write_buf.empty();
+        if (was_idle) {
+            conn.write_buf = std::move(resp_buf);
+            conn.write_offset = 0;
+        } else {
+            conn.write_queue_.push_back(std::move(resp_buf));
+        }
+        conn.have_header = false;
+        conn.read_buf.clear();
 
-    if (was_idle) {
-        epoll_event ev{};
-        ev.events = EPOLLIN | EPOLLOUT;
-        ev.data.fd = fd;
-        ::epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fd, &ev);
+        if (was_idle) {
+            epoll_event ev{};
+            ev.events = EPOLLIN | EPOLLOUT;
+            ev.data.fd = fd;
+            ::epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fd, &ev);
+        }
+        return;
     }
-    co_return;
 }
 
 void EpollReactor::handle_write(int fd) {
@@ -315,15 +271,6 @@ void EpollReactor::handle_write(int fd) {
 }
 
 void EpollReactor::close_connection(int fd) {
-    auto it = connections_.find(fd);
-    if (it != connections_.end()) {
-        if (it->second.pending_coro) {
-            auto addr = it->second.pending_coro.address();
-            coro_addr_to_fd_.erase(addr);
-            it->second.pending_coro.destroy();
-            it->second.pending_coro = nullptr;
-        }
-    }
     ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
     ::close(fd);
     connections_.erase(fd);

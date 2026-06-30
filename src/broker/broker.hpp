@@ -1,6 +1,5 @@
 #pragma once
 
-#include <coroutine>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -12,7 +11,6 @@
 #include "broker/partition_context.hpp"
 #include "broker/record_handler.hpp"
 #include "cluster/metadata.hpp"
-#include "net/task.hpp"
 #include "protocol/request.hpp"
 #include "protocol/response.hpp"
 
@@ -27,7 +25,7 @@ class Broker {
           record_handler_(contexts_mutex_, partition_contexts_, metadata_, log_root_,
                           segment_bytes, ring) {}
 
-    auto handle(const Request& req) -> net::Task<Response>;
+    auto handle(const Request& req) -> Response;
   private:
     ClusterMetadata metadata_;
     std::string log_root_;

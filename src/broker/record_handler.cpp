@@ -41,7 +41,7 @@ auto RecordHandler::handle_list_offsets(const ListOffsetsRequest& r) -> ListOffs
     };
 }
 
-auto RecordHandler::handle_produce(const ProduceRequest& r) -> net::Task<ProduceResponse> {
+auto RecordHandler::handle_produce(const ProduceRequest& r) -> ProduceResponse {
     std::vector<ProduceTopicResponse> topic_responses;
     topic_responses.reserve(r.topics.size());
     for (const auto& topic_req : r.topics) {
@@ -58,7 +58,7 @@ auto RecordHandler::handle_produce(const ProduceRequest& r) -> net::Task<Produce
                 if (!part_req.records.empty()) {
                     auto& ctx =
                         get_or_create_context(topic_req.topic_name, part_req.partition_index);
-                    auto result = co_await ctx.produce(part_req.records);
+                    auto result = ctx.produce(part_req.records);
                     base_offset = result.base_offset;
                     log_append_time_ms = result.log_append_time_ms;
                     if (base_offset < 0) {
@@ -84,7 +84,7 @@ auto RecordHandler::handle_produce(const ProduceRequest& r) -> net::Task<Produce
         topic_responses.push_back(
             {.topic_name = topic_req.topic_name, .partitions = std::move(parts)});
     }
-    co_return ProduceResponse{
+    return ProduceResponse{
         .correlation_id = r.header.correlation_id,
         .throttle_time_ms = 0,
         .responses = std::move(topic_responses),

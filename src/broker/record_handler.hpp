@@ -1,6 +1,5 @@
 #pragma once
 
-#include <coroutine>
 #include <liburing.h>
 #include <mutex>
 #include <string>
@@ -8,7 +7,6 @@
 
 #include "broker/partition_context.hpp"
 #include "cluster/metadata.hpp"
-#include "net/task.hpp"
 #include "protocol/request.hpp"
 #include "protocol/response.hpp"
 
@@ -24,7 +22,7 @@ class RecordHandler {
         : mutex_(&mutex), partition_contexts_(partition_contexts), metadata_(metadata),
           log_root_(std::move(log_root)), segment_bytes_(segment_bytes), ring_(ring) {}
 
-    auto handle_produce(const ProduceRequest& r) -> net::Task<ProduceResponse>;
+    auto handle_produce(const ProduceRequest& r) -> ProduceResponse;
     auto handle_fetch(const FetchRequest& r) -> FetchResponse;
     auto handle_list_offsets(const ListOffsetsRequest& r) -> ListOffsetsResponse;
 

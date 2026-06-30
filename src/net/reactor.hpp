@@ -1,7 +1,6 @@
 #pragma once
 
 #include <chrono>
-#include <coroutine>
 #include <cstdint>
 #include <deque>
 #include <liburing.h>
@@ -12,7 +11,6 @@
 #include "broker/broker.hpp"
 #include "broker/metrics.hpp"
 #include "cluster/metadata.hpp"
-#include "net/task.hpp"
 
 namespace config {
 struct Config;
@@ -46,16 +44,13 @@ class EpollReactor {
         std::vector<uint8_t> resp_pool;
         int splice_fd = -1;
         unsigned int splice_len = 0;
-        std::coroutine_handle<> pending_coro;
     };
 
     void handle_accept();
-    net::Task<void> handle_read(int fd);
+    void handle_read(int fd);
     void handle_write(int fd);
     void close_connection(int fd);
     void log_metrics();
-
-    std::unordered_map<void*, int> coro_addr_to_fd_;
 
     static constexpr auto kMetricsInterval = std::chrono::seconds(30);
 
