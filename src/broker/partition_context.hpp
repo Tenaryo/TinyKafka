@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "storage/log_reader.hpp"
+#include "util/arena.hpp"
 #include "storage/partition_log.hpp"
 #include "util/record_batch.hpp"
 
@@ -163,7 +164,9 @@ class PartitionContext {
         }
 
         int64_t skip_count = offset - entry_offset;
+        util::Arena arena;
         std::vector<uint8_t> result;
+        result.reserve(static_cast<size_t>(max_bytes));
         for (size_t i = 0; i < records->size(); ++i) {
             if (static_cast<int64_t>(i) < skip_count) {
                 continue;
