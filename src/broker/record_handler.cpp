@@ -176,6 +176,6 @@ auto RecordHandler::get_or_create_context(const std::string& topic_name,
     auto [it, inserted] =
         partition_contexts_.try_emplace(key,
                                         std::make_unique<broker::PartitionContext>(
-                                            log_root_, topic_name, partition, segment_bytes_));
+                                            log_root_, topic_name, partition, segment_bytes_, ring_));
     return *it->second;
 }

@@ -18,11 +18,12 @@ class Broker {
   public:
     explicit Broker(ClusterMetadata metadata = {},
                     std::string log_root = {},
-                    size_t segment_bytes = 0)
+                    size_t segment_bytes = 0,
+                    io_uring* ring = nullptr)
         : metadata_(std::move(metadata)), log_root_(std::move(log_root)),
           metadata_handler_(metadata_),
           record_handler_(contexts_mutex_, partition_contexts_, metadata_, log_root_,
-                          segment_bytes) {}
+                          segment_bytes, ring) {}
 
     auto handle(const Request& req) -> Response;
   private:

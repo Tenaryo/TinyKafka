@@ -25,6 +25,7 @@ EpollReactor::EpollReactor(const config::Config& config, ClusterMetadata metadat
       max_message_bytes_(config.max_message_bytes),
       max_write_buffer_bytes_(config.max_write_buffer_bytes),
       last_metrics_log_(std::chrono::steady_clock::now()) {
+    ::io_uring_queue_init(64, &ring_, 0);
     if (epoll_fd_ < 0) [[unlikely]] {
         logging::error("epoll_create1 failed: " + std::to_string(errno));
         return;
@@ -35,10 +36,6 @@ EpollReactor::EpollReactor(const config::Config& config, ClusterMetadata metadat
     ev.data.fd = server_fd_;
     if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, server_fd_, &ev) < 0) [[unlikely]] {
         logging::error("epoll_ctl ADD server failed: " + std::to_string(errno));
-    }
-
-    if (::io_uring_queue_init(64, &ring_, 0) < 0) {
-        logging::warn("io_uring init skipped (kernel support needed for SQPOLL)");
     }
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <liburing.h>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -16,9 +17,10 @@ class RecordHandler {
                       partition_contexts,
                   const ClusterMetadata& metadata,
                   std::string log_root,
-                  size_t segment_bytes)
+                  size_t segment_bytes,
+                  io_uring* ring = nullptr)
         : mutex_(&mutex), partition_contexts_(partition_contexts), metadata_(metadata),
-          log_root_(std::move(log_root)), segment_bytes_(segment_bytes) {}
+          log_root_(std::move(log_root)), segment_bytes_(segment_bytes), ring_(ring) {}
 
     auto handle_produce(const ProduceRequest& r) -> ProduceResponse;
     auto handle_fetch(const FetchRequest& r) -> FetchResponse;
@@ -38,4 +40,5 @@ class RecordHandler {
     const ClusterMetadata& metadata_;
     std::string log_root_;
     size_t segment_bytes_;
+    io_uring* ring_{nullptr};
 };
