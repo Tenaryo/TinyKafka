@@ -40,6 +40,7 @@ class EpollReactor {
         std::vector<uint8_t> write_buf;
         size_t write_offset = 0;
         std::deque<std::vector<uint8_t>> write_queue_;
+        std::vector<uint8_t> resp_pool;
     };
 
     void handle_accept();

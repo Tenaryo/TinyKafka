@@ -177,7 +177,8 @@ void EpollReactor::handle_read(int fd) {
         }
 
         auto resp = broker_.handle(*req);
-        std::vector<uint8_t> resp_buf = serialize(resp);
+        auto& resp_buf = conn.resp_pool;
+        resp_buf = serialize(resp);
         if (resp_buf.size() > max_write_buffer_bytes_) [[unlikely]] {
             logging::error("Response exceeds max_write_buffer_bytes (fd=" + std::to_string(fd) +
                            ", size=" + std::to_string(resp_buf.size()) + ")");
