@@ -43,12 +43,12 @@ class PartitionContext {
     [[nodiscard]] auto produce(std::span<const uint8_t> record_batch_data) -> ProduceResult {
         std::lock_guard lock(mutex_);
 
-        auto values = util::parse_record_batch(record_batch_data);
-        if (!values) {
+        auto count_result = util::record_batch_count(record_batch_data);
+        if (!count_result) {
             return {};
         }
 
-        auto record_count = static_cast<int32_t>(values->size());
+        auto record_count = *count_result;
 
         auto now = std::chrono::system_clock::now();
         auto append_time =
