@@ -37,7 +37,7 @@ EpollReactor::EpollReactor(const config::Config& config, ClusterMetadata metadat
         logging::error("epoll_ctl ADD server failed: " + std::to_string(errno));
     }
 
-    if (::io_uring_queue_init(64, &ring_, IORING_SETUP_SQPOLL) < 0) {
+    if (::io_uring_queue_init(64, &ring_, 0) < 0) {
         logging::warn("io_uring init skipped (kernel support needed for SQPOLL)");
     }
 }
