@@ -169,7 +169,7 @@ class PartitionContext {
         }
         std::span<const uint8_t> raw_data(raw_span.data(), static_cast<size_t>(actual));
 
-        auto records = util::parse_record_batch(raw_data);
+        auto records = util::parse_record_batch(raw_data, arena);
         if (!records || records->empty()) {
             if (raw_data.size() > static_cast<size_t>(max_bytes)) {
                 std::vector<uint8_t> fallback(raw_data.begin(), raw_data.begin() + max_bytes);

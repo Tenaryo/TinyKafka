@@ -229,4 +229,11 @@ inline auto record_batch_count(std::span<const uint8_t> data)
     return *last_offset_delta + 1;
 }
 
+inline auto parse_record_batch(std::span<const uint8_t> data, [[maybe_unused]] Arena& arena)
+    -> std::expected<std::vector<std::vector<uint8_t>>, std::error_code> {
+    auto result = parse_record_batch(data);
+    if (!result) return std::unexpected(result.error());
+    return std::move(*result);
+}
+
 } // namespace util
