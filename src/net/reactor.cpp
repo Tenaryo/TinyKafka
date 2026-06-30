@@ -3,6 +3,7 @@
 #include <array>
 #include <cerrno>
 #include <chrono>
+#include <coroutine>
 #include <format>
 
 #include <fcntl.h>
@@ -81,6 +82,18 @@ void EpollReactor::run() {
                 if ((evts & EPOLLOUT) != 0) {
                     handle_write(fd);
                 }
+            }
+        }
+
+        io_uring_cqe* cqe = nullptr;
+        while (::io_uring_peek_cqe(&ring_, &cqe) == 0) {
+            if (cqe) {
+                auto handle = std::coroutine_handle<>::from_address(
+                    io_uring_cqe_get_data(cqe));
+                if (handle) {
+                    handle.resume();
+                }
+                ::io_uring_cqe_seen(&ring_, cqe);
             }
         }
 
