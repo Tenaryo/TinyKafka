@@ -159,25 +159,27 @@ class PartitionContext {
             return {};
         }
 
-        std::vector<uint8_t> raw_data(read_size);
-        auto actual = ::pread(fd, raw_data.data(), read_size,
+        util::Arena arena;
+        auto raw_span = arena.allocate(read_size);
+        auto actual = ::pread(fd, raw_span.data(), read_size,
                                static_cast<off_t>(start_position));
         ::close(fd);
         if (actual < 0) {
             return {};
         }
-        raw_data.resize(static_cast<size_t>(actual));
+        std::span<const uint8_t> raw_data(raw_span.data(), static_cast<size_t>(actual));
 
         auto records = util::parse_record_batch(raw_data);
         if (!records || records->empty()) {
             if (raw_data.size() > static_cast<size_t>(max_bytes)) {
-                raw_data.resize(static_cast<size_t>(max_bytes));
+                std::vector<uint8_t> fallback(raw_data.begin(), raw_data.begin() + max_bytes);
+                return fallback;
             }
-            return raw_data;
+            return std::vector<uint8_t>(raw_data.begin(), raw_data.end());
         }
 
         int64_t skip_count = offset - entry_offset;
-        util::Arena arena;
+        auto result_span = arena.allocate(static_cast<size_t>(max_bytes));
         std::vector<uint8_t> result;
         result.reserve(static_cast<size_t>(max_bytes));
         for (size_t i = 0; i < records->size(); ++i) {
