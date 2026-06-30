@@ -38,6 +38,7 @@ class EpollReactor {
         bool have_header = false;
         std::vector<uint8_t> write_buf;
         size_t write_offset = 0;
+        bool write_pending = false;
     };
 
     void handle_accept();

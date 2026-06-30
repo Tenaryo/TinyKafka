@@ -189,11 +189,12 @@ void EpollReactor::handle_read(int fd) {
         metrics_.requests_total.fetch_add(1, std::memory_order_relaxed);
         metrics_.bytes_received.fetch_add(total_needed, std::memory_order_relaxed);
         conn.write_offset = 0;
+        conn.write_pending = true;
         conn.have_header = false;
         conn.read_buf.clear();
 
         epoll_event ev{};
-        ev.events = EPOLLOUT;
+        ev.events = EPOLLIN | EPOLLOUT;
         ev.data.fd = fd;
         ::epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fd, &ev);
         return;
@@ -217,6 +218,7 @@ void EpollReactor::handle_write(int fd) {
     if (conn.write_offset >= conn.write_buf.size()) {
         conn.write_buf.clear();
         conn.write_offset = 0;
+        conn.write_pending = false;
 
         epoll_event ev{};
         ev.events = EPOLLIN;
