@@ -6,13 +6,13 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Lines](https://img.shields.io/badge/core-~3%2C800%20LOC-lightgrey.svg)](.)
 
-A Kafka broker written from scratch in C++23 — ~3,800 LOC core, 6,600 LOC tests, **zero external dependencies**. Supports 14 Kafka wire protocols (Produce, Fetch, Metadata, Consumer Groups, Join/Sync/Heartbeat, OffsetCommit/Fetch, ListOffsets, and more).
+A Kafka broker written from scratch in C++23 — ~4,500 LOC core, 6,600 LOC tests, **liburing + C++23 STL + POSIX sockets**. Supports 14 Kafka wire protocols (Produce, Fetch, Metadata, Consumer Groups, Join/Sync/Heartbeat, OffsetCommit/Fetch, ListOffsets, and more).
 
 ## Highlights
 
-- **14 Kafka API keys** — full produce/fetch pipeline, KRaft metadata, consumer group coordination (JoinGroup→SyncGroup→Heartbeat state machine with session timeout)
+- **14 Kafka API keys** — full produce/fetch pipeline, KRaft metadata, consumer group coordination (JoinGroup→SyncGroup→Heartbeat state machine with session timeout), request pipeline (EPOLLIN|EPOLLOUT read/write overlap)
 - **93.3% test coverage** — 140 GoogleTest cases (parser × 54, serializer × 32, broker × 30, integration × 14, config × 5, metrics × 4, cluster metadata × 1)
-- **128K msg/s** (loopback, 1KB, 8 connections, Release build)
+- **163K msg/s** (loopback, 1KB, 8 connections, Release build)
 - **Zero dependencies** — C++23 STL + POSIX sockets + epoll, no Boost, no ZooKeeper, no Java
 - **Production-grade CI** — TSan + ASan + UBSan + clang-tidy + 80% coverage gate (see FIX-1, commit 1156c30)
 
@@ -52,20 +52,7 @@ cmake --build benchmark/build --target producer_bench
 | 13 | LeaveGroup | 0–5 | Member removal, state transition to AwaitingSync |
 | 14 | SyncGroup | 0–5 | Leader submits assignments, follower retrieves |
 | 18 | ApiVersions | 0–4 | Capability negotiation |
-
-## Architecture
-
-```
-src/
-├── broker/       Batch handler, PartitionContext, GroupCoordinator
-├── cluster/      KRaft metadata (topic/partition records)
-├── config/       Properties file + CLI override
-├── logging/      Structured UTC logging (gettid, lock-free)
-├── net/          Epoll reactor, non-blocking I/O, backpressure
-├── protocol/     Wire format parser + serializer (14 APIs)
-├── storage/      Log segment reader, partition log paths
-└── util/         Byte reader/writer, varint, endian, record batch v2 parser
-```
+| 75 | DescribeTopicPartitions | 0–0 | Topic metadata by name |
 
 ## Performance
 
@@ -73,12 +60,12 @@ Release build (-O3), loopback, single broker, 50K messages per scenario:
 
 | Scenario | msg/s | MB/s | P50 |
 |----------|-------|------|-----|
-| 100B | 30,884 | 2.9 | 30μs |
-| 1KB | 30,438 | 29.7 | 30μs |
-| 10KB | 26,260 | 256.4 | 34μs |
-| 100KB | 9,962 | 972.9 | 79μs |
-| 1KB × 4 conn | 112,212 | 109.6 | 32μs |
-| 1KB × 8 conn | 128,947 | 125.9 | 59μs |
+| 100B | 31,235 | 3.0 | 28μs |
+| 1KB | 33,636 | 32.8 | 27μs |
+| 10KB | 28,524 | 278.6 | 30μs |
+| 100KB | 8,752 | 854.7 | 81μs |
+| 1KB × 4 conn | 121,513 | 118.7 | 29μs |
+| 1KB × 8 conn | 163,005 | 159.2 | 54μs |
 
 Run `./benchmark/run_all.sh` to reproduce on your machine.
 

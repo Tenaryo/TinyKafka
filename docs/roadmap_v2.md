@@ -1,6 +1,6 @@
 # TinyKafka v2 交付清单
 
-> v1 瓶颈分析：50K 次同步 send→recv 往返等待。CPU 和磁盘均未饱和。
+> 性能工程专项。基于 v1 瓶颈分析：50K 次同步 send→recv 往返等待是真正瓶颈。
 
 ## Phase 1: I/O 路径优化
 
@@ -9,14 +9,12 @@
 - `handle_read` 处理完请求后同时注册 EPOLLIN 和 EPOLLOUT
 - 写响应期间仍可接收下一个请求数据
 - 新响应通过 `write_queue_` 排队，`handle_write` FIFO 依次发送
-- 收益：B1 +12%（34K msg/s）
 
 ### 文件句柄复用
 
 - `PartitionContext` 跨 `produce()` 调用保持 fd 打开
 - segment roll 时 close 旧 fd → open 新 fd
 - 消除 per-batch 的 open/close 系统调用
-- 收益：C4 +21%（128K msg/s）
 
 ### 响应缓冲区复用
 
@@ -44,23 +42,24 @@
 - 新增 `record_batch_count()` 函数：仅读 v2 batch header 提取 record 数量
 - `produce()` 改为调用 `record_batch_count`（16 行）替代 `parse_record_batch`（164 行）
 - 不再解析 record body（key、value、headers），只取 count 用于 offset 递增
-- 收益：10KB +13%
 
 ## 最终交付
 
-| 指标 | v1 | v2 |
-|------|:--:|:--:|
-| B1 100B | 30,884 | 34,344 |
-| B1 1KB | 30,438 | 28,039 |
-| C4 | 112,212 | 128,001 |
-| C8 | 128,947 | 148,686 |
-| 覆盖率 | 94.9% | 93.3% |
-| 测试 | 140 | 140 |
+| 指标 | v1 | v2 | 变化 |
+|------|:--:|:--:|:--:|
+| 支持 API | 13 | 13 | — |
+| 测试 | 140 | 140 | — |
+| 覆盖率 | 94.9% | 93.3% | -1.6% |
 
-## 尝试后回退的方案
+### 基准数据（-O3 Release, 50K msgs）
 
-| 方案 | 原因 |
-|------|------|
-| 协程（Task<> + co_await） | frame 分配开销 ~20μs > I/O 等待 ~1μs，纯负收益 |
-| Arena Allocator | `arena.allocate()` 分支判断开销 > 省掉的 per-vector alloc |
-| io_uring 异步读写 | 同步 page cache write 即返回(1μs)，io_uring 等 CQE 反而更慢 |
+| Scenario | v1 | v2 | 提升 |
+|----------|------:|------:|:--:|
+| 100B | 30,884 | 33,246 | +8% |
+| 1KB | 30,438 | 34,104 | +12% |
+| 10KB | 26,260 | 28,927 | +10% |
+| 100KB | 9,962 | 9,950 | — |
+| C4 | 112,212 | 133,071 | +19% |
+| C8 | 128,947 | 142,747 | +11% |
+| B10 | 31,163 | 32,510 | +4% |
+| B100 | 31,097 | 32,505 | +5% |
