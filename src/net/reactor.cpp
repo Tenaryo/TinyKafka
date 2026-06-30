@@ -119,6 +119,9 @@ void EpollReactor::handle_accept() {
 
 void EpollReactor::handle_read(int fd) {
     auto& conn = connections_[fd];
+    if (conn.write_pending) {
+        return;
+    }
 
     while (true) {
         if (!conn.have_header) {
