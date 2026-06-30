@@ -184,6 +184,18 @@ void EpollReactor::handle_read(int fd) {
         auto resp = broker_.handle(*req);
         auto& resp_buf = conn.resp_pool;
         resp_buf = serialize(resp);
+
+        if (auto* fetch_resp = std::get_if<FetchResponse>(&resp)) {
+            for (const auto& tr : fetch_resp->responses) {
+                for (const auto& pr : tr.partitions) {
+                    if (!pr.records.empty() && pr.records.size() > 65536) {
+                        conn.splice_fd = -1;
+                        conn.splice_len = 0;
+                    }
+                }
+            }
+        }
+
         if (resp_buf.size() > max_write_buffer_bytes_) [[unlikely]] {
             logging::error("Response exceeds max_write_buffer_bytes (fd=" + std::to_string(fd) +
                            ", size=" + std::to_string(resp_buf.size()) + ")");
@@ -230,6 +242,21 @@ void EpollReactor::handle_write(int fd) {
     }
 
     if (conn.write_offset >= conn.write_buf.size()) {
+        if (conn.splice_fd >= 0) {
+            ::io_uring_sqe* sqe = ::io_uring_get_sqe(&ring_);
+            if (sqe) {
+                ::io_uring_prep_splice(sqe, conn.splice_fd, 0, fd, -1, conn.splice_len, 0);
+                ::io_uring_submit(&ring_);
+                ::io_uring_cqe* cqe = nullptr;
+                ::io_uring_wait_cqe(&ring_, &cqe);
+                [[maybe_unused]] auto res = cqe->res;
+                ::io_uring_cqe_seen(&ring_, cqe);
+                metrics_.bytes_sent.fetch_add(static_cast<size_t>(res > 0 ? res : 0),
+                                               std::memory_order_relaxed);
+            }
+            conn.splice_fd = -1;
+            conn.splice_len = 0;
+        }
         if (!conn.write_queue_.empty()) {
             conn.write_buf = std::move(conn.write_queue_.front());
             conn.write_queue_.pop_front();

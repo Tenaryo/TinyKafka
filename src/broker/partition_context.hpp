@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <fcntl.h>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -188,6 +189,22 @@ class PartitionContext {
         std::lock_guard lock(mutex_);
         return current_segment_index_;
     }
+
+    [[nodiscard]] auto file_fd() -> int {
+        if (!splice_fd_ || !file_.is_open()) {
+            auto path = log_.segment_path(current_segment_base_offset_);
+            splice_fd_ = ::open(path.c_str(), O_RDONLY);
+        }
+        return splice_fd_;
+    }
+
+    [[nodiscard]] auto file_position() const -> size_t {
+        return current_segment_bytes_;
+    }
+
+    [[nodiscard]] auto segment_base_offset() const -> int64_t {
+        return current_segment_base_offset_;
+    }
   private:
     std::string log_root_;
     std::string topic_name_;
@@ -199,6 +216,7 @@ class PartitionContext {
     size_t segment_bytes_{0};
     std::vector<SparseIndexEntry> current_segment_index_;
     std::ofstream file_;
+    int splice_fd_{-1};
     mutable std::mutex mutex_;
 };
 

@@ -42,6 +42,8 @@ class EpollReactor {
         size_t write_offset = 0;
         std::deque<std::vector<uint8_t>> write_queue_;
         std::vector<uint8_t> resp_pool;
+        int splice_fd = -1;
+        unsigned int splice_len = 0;
     };
 
     void handle_accept();
