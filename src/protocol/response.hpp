@@ -50,6 +50,9 @@ struct FetchPartitionResponse {
     int32_t partition_index = 0;
     int16_t error_code = 0;
     std::vector<uint8_t> records;
+    int splice_fd = -1;
+    size_t splice_offset = 0;
+    size_t splice_len = 0;
 };
 
 struct FetchTopicResponse {

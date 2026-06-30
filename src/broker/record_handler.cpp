@@ -102,14 +102,38 @@ auto RecordHandler::handle_fetch(const FetchRequest& r) -> FetchResponse {
             for (const auto& part_req : topic_req.partitions) {
                 auto& ctx = get_or_create_context(info->name, part_req.partition_index);
                 std::vector<uint8_t> records;
+                int splice_fd = -1;
+                size_t splice_offset = 0;
+                size_t splice_len = 0;
                 if (part_req.fetch_offset > 0 || part_req.max_bytes > 0) {
                     records = ctx.fetch(part_req.fetch_offset, part_req.max_bytes);
+                    if (records.size() > 65536) {
+                        auto si = ctx.splice_info(part_req.fetch_offset, part_req.max_bytes);
+                        if (si.fd >= 0) {
+                            splice_fd = si.fd;
+                            splice_offset = si.file_offset;
+                            splice_len = si.length;
+                            records.clear();
+                        }
+                    }
                 } else {
                     records = ctx.fetch();
+                    if (records.size() > 65536) {
+                        auto si = ctx.splice_info(0, 1'048'576);
+                        if (si.fd >= 0) {
+                            splice_fd = si.fd;
+                            splice_offset = si.file_offset;
+                            splice_len = si.length;
+                            records.clear();
+                        }
+                    }
                 }
                 parts.push_back({.partition_index = part_req.partition_index,
                                  .error_code = 0,
-                                 .records = std::move(records)});
+                                 .records = std::move(records),
+                                 .splice_fd = splice_fd,
+                                 .splice_offset = splice_offset,
+                                 .splice_len = splice_len});
             }
             topic_responses.push_back(
                 {.topic_id = topic_req.topic_id, .partitions = std::move(parts)});

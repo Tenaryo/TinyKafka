@@ -191,11 +191,25 @@ class PartitionContext {
     }
 
     [[nodiscard]] auto file_fd() -> int {
-        if (!splice_fd_ || !file_.is_open()) {
+        if (splice_fd_ < 0 && file_.is_open()) {
             auto path = log_.segment_path(current_segment_base_offset_);
             splice_fd_ = ::open(path.c_str(), O_RDONLY);
         }
         return splice_fd_;
+    }
+
+    struct SpliceInfo {
+        int fd = -1;
+        size_t file_offset = 0;
+        size_t length = 0;
+    };
+
+    [[nodiscard]] auto splice_info([[maybe_unused]] int64_t fetch_offset, int32_t max_bytes) -> SpliceInfo {
+        std::lock_guard lock(mutex_);
+        auto fd = file_.is_open() ? file_fd() : -1;
+        if (fd < 0) return {};
+        size_t offset = current_segment_bytes_;
+        return {fd, offset, static_cast<size_t>(max_bytes)};
     }
 
     [[nodiscard]] auto file_position() const -> size_t {

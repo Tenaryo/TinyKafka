@@ -186,11 +186,11 @@ void EpollReactor::handle_read(int fd) {
         resp_buf = serialize(resp);
 
         if (auto* fetch_resp = std::get_if<FetchResponse>(&resp)) {
-            for (const auto& tr : fetch_resp->responses) {
-                for (const auto& pr : tr.partitions) {
-                    if (!pr.records.empty() && pr.records.size() > 65536) {
-                        conn.splice_fd = -1;
-                        conn.splice_len = 0;
+            for (auto& tr : fetch_resp->responses) {
+                for (auto& pr : tr.partitions) {
+                    if (pr.splice_fd >= 0) {
+                        conn.splice_fd = pr.splice_fd;
+                        conn.splice_len = static_cast<unsigned int>(pr.splice_len);
                     }
                 }
             }
